@@ -111,7 +111,7 @@ class Memory():
 
 
 class Storage():
-    def __init__(self, block_number, storage_data_and_num_storage_var=({},0)):
+    def __init__(self, block_number, storage_data_and_num_storage_var=({}, 0)):
         self.block_number = block_number
         self.storage_data = storage_data_and_num_storage_var[0]
         self.num_storage_var = storage_data_and_num_storage_var[1]
@@ -122,20 +122,20 @@ class Storage():
             'storageVar{}-{}'.format(self.blockNumber, self.num_storage_var),
             256)
 
-    def sload(self,key):
+    def sload(self, key):
         if key in self.storage_data.keys():
             return self.storage_data[key]
         else:
-            newvar =  self.generate_storage_var()
+            newvar = self.generate_storage_var()
             self.storage_data[key] = newvar
             return newvar
 
-    def sstore(self,key,value):
+    def sstore(self, key, value):
         self.storage_data[key] = value
 
 
-
-# TODO call data
+# TODO return data
+# call data is included in the execution environment
 
 
 if __name__ == '__main__':
