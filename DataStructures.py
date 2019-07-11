@@ -11,12 +11,12 @@ class Stack():
     def __init__(self, blockNumber=0, stdata_and_numStackVar=(deque(), 0)):
         # blockNumber will be VM object's member
         self.blockNumber = blockNumber
-        self.stdata = stdata_and_numStackVar[0]
-        self.size = lambda: len(self.stdata)
+        self.stackdata = stdata_and_numStackVar[0]
+        self.size = lambda: len(self.stackdata)
         self.numStackVar = stdata_and_numStackVar[1]
 
-    def generateCopy(self):
-        return deepcopy(self.stdata), self.numStackVar
+    def generate_copy(self):
+        return deepcopy(self.stackdata), self.numStackVar
 
     def generateStackVar(self):
         self.numStackVar += 1
@@ -27,14 +27,14 @@ class Stack():
     def push(self, w):
         if self.size() < 1023:
             # w must be a 256bit-bitvec object
-            self.stdata.append(w)
+            self.stackdata.append(w)
         else:
             # TODO stack limit reached 1024
             pass
 
     def pop(self):
         if self.size() >= 1:
-            return self.stdata.pop()
+            return self.stackdata.pop()
         else:
             # generate a symbolic variable
             return self.generateStackVar()
@@ -46,11 +46,11 @@ class Stack():
 
         if x + 1 > self.size():
             for _ in range(x + 1 - self.size()):
-                self.stdata.appendleft(self.generateStackVar)
+                self.stackdata.appendleft(self.generateStackVar)
 
-        a = self.stdata[self.size() - 1]
-        self.stdata[self.size() - 1] = self.stdata[self.size() - 1 - x]
-        self.stdata[self.size() - 1 - x] = a
+        a = self.stackdata[self.size() - 1]
+        self.stackdata[self.size() - 1] = self.stackdata[self.size() - 1 - x]
+        self.stackdata[self.size() - 1 - x] = a
 
     def dupx(self, x):
         if x < 1 or 16 < x:
@@ -59,9 +59,9 @@ class Stack():
 
         if x > self.size():
             for _ in range(x - self.size()):
-                self.stdata.appendleft(self.generateStackVar)
+                self.stackdata.appendleft(self.generateStackVar)
 
-        self.stdata.append(self.stdata[self.size() - x])
+        self.stackdata.append(self.stackdata[self.size() - x])
 
 
 class Memory():
@@ -86,6 +86,11 @@ class Memory():
         for i in range(WORDBYTESIZE):
             self.memdata[offset+i] = Extract(i*8+7, i*8, value)
 
+
+    # TODO mstore8
+
+
+
     def mload(self, offset):
         if offset + WORDBYTESIZE > self.size():
             # ~ index out of bounds ~
@@ -104,9 +109,34 @@ class Memory():
     def msize(self):
         return self.memsize
 
-# TODO storage
-# TODO return data
+
+class Storage():
+    def __init__(self, block_number, storage_data_and_num_storage_var=({},0)):
+        self.block_number = block_number
+        self.storage_data = storage_data_and_num_storage_var[0]
+        self.num_storage_var = storage_data_and_num_storage_var[1]
+
+    def generate_storage_var(self):
+        self.num_storage_var += 1
+        return BitVec(
+            'storageVar{}-{}'.format(self.blockNumber, self.num_storage_var),
+            256)
+
+    def sload(self,key):
+        if key in self.storage_data.keys():
+            return self.storage_data[key]
+        else:
+            newvar =  self.generate_storage_var()
+            self.storage_data[key] = newvar
+            return newvar
+
+    def sstore(self,key,value):
+        self.storage_data[key] = value
+
+
+
 # TODO call data
+
 
 if __name__ == '__main__':
     m = Memory()
@@ -131,13 +161,13 @@ if __name__ == '__main__':
     s.swapx(4)
     import sys
     for i in range(s.size()):
-        sys.stdout.write(str(s.stdata[i]))
+        sys.stdout.write(str(s.stackdata[i]))
         sys.stdout.write(' ')
 
-    s2 = Stack(1,(s.generateCopy()) )
+    s2 = Stack(1, (s.generate_copy()))
     for i in range(s2.size()):
         sys.stdout.write('i={} '.format(i))
-        sys.stdout.write(str(simplify(s2.stdata[i] * BitVecVal(2,256) / BitVecVal(2,256))))
+        sys.stdout.write(str(simplify(s2.stackdata[i] * BitVecVal(2, 256) / BitVecVal(2, 256))))
         print()
 
 
