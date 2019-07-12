@@ -141,15 +141,34 @@ class Returndata():
     pass
 # call data is included in the execution environment
 
+class System_state:
+    def __init__(self):
+        self.accounts = []
+        self.block_hashes = {}
 
-class Accounts():
-    def
+    def add_account(self,code: str):
+        self.accounts.append(Account())
+class Account:
+    def __init__(self, code: str, storage: Storage, account_num: int):
+        self.code = code
+        self.storage = storage
+        self.account_num = account_num
+        self.balance = BitVec('account_balance_{}'.format(self.account_num), 256)
+        self.CFG_nodes = []
+        self.CFG_edges = {}
+        self.CFG_filename = "contract{}".format(self.account_num)
+
+
+
+
+
+class Machine_state:
+    def __init__(self, memory=Memory(), stack=Stack()):
+
 class Execution_environment():
     pass
-class Machine_state():
-    pass
-class System_state():
-    pass
+
+
 if __name__ == '__main__':
     m = Memory()
     m.mstore(0,BitVec("hoge",256))
