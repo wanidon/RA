@@ -1,12 +1,12 @@
 
-# parts
-## Storage
-## Memory
-## Stack
-## Returndata
+## parts
+### Storage
+### Memory
+### Stack
+### Returndata
 Unlimited byte array similar to  memory. When the size of return value is fixed, it looks like the stack is being used as a place to store the return value.
-## Calldata
-## Node
+### Calldata
+### Node
 Each CFG node holds its own Execution_state at the end of its symbolic execution.
 - node_number
 - Execution_state ~~Machine_state~~  
@@ -18,14 +18,14 @@ snapshot of execution state
 - ~~destination~~
 
 
-# execution of this tool
-## System_state
+## execution of this tool
+### System_state
 denoted σ, generated once, ~~the mapping between account_address -> Account~~
 - list of execution_environment
 - block_hashes, the mapping between block_number -> hash
 
-# execution of contract
-## Execution_environment
+## execution of contract
+### Execution_environment
 denoted I, generated for each execution
 - eenum, number of execution environment
 - Ia, the address of the account which owns the code that is executing. == *address(this)*
@@ -46,7 +46,7 @@ this will be used to receive data
 - ~~Iw, the permission to make modifications to the state.~~
 - list of account
 
-## Execution_state ~~Machine_state~~
+### Execution_state ~~Machine_state~~
 denoted µ, generated for each execution and stored each CFG as snapshot. differently from original Ethereum, this includes Storage for convinience to analysis
 - pc
 - Memory
@@ -58,13 +58,13 @@ this will be used to send data
 - ~~gas_available~~
 - ~~i (memsize?)~~
 
-## CFG_manager
+### CFG_manager
 - list of Node
 - edges {origin:[destnode1,destnode2,,,]}
 - CFG_filename
 
-# execution
-## Account
+## contract
+### Account
 generated for each contract, differently from original Ethereum, it (will) only holds immutable variables
 - account_num
 - code,EVM bytecode, immutable
