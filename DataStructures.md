@@ -1,26 +1,36 @@
 # Data structures associated with Ethereum
 
-## system_state
-account_address -> Account
-## Account
-- code,EVM bytecode
-- codesize,len(code)
-- Storage
-- balance
-- [node1,node2,,]
-- edges
-- cfg_filename
-## Machine_state
-- ~~gas_available~~
-- pc
-- Memory
-- ~~i (memsize?)~~
-- Stack
 ## Storage
 ## Memory
 ## Stack
 ## Returndata
+Unlimited byte array similar to  memory. When the size of return value is fixed, it looks like the stack is being used as a place to store the return value.
+
+## Account
+generated for each contract
+- code,EVM bytecode, immutable
+- codesize,len(code), immutable
+- Storage, mutable
+- balance, mutable
+- the list of CFG node, e.g. [node1,node2,,]
+- the edges of CFG, e.g.{origin_node:[dest1,dest2]}
+- cfg_filename
+
+## system_state
+denoted σ, generated once, ~~the mapping between account_address -> Account~~
+- list of Accounts
+- block_hashes, the mapping between block_number -> hash
+
+## Machine_state
+denoted µ, generated for each execution
+- pc
+- Memory
+- Stack
+- ~~gas_available~~
+- ~~i (memsize?)~~
+
 ## Execution_environment
+denoted I, generated for each execution
 - Ia, the address of the account which owns the code that is executing. == *address(this)*
 - ~~Io,the sender address of the transaction that originated this execution.~~
 - Ip, the price of gas in the transaction that origi- nated this execution. == *tx.gasprice*
@@ -36,8 +46,7 @@ account_address -> Account
     - *block.gaslimit*
 - ~~Ie, the depth of the present message-call or contract-creation (i.e. the number of CALLs or CREATEs being executed at present).~~
 - ~~Iw, the permission to make modifications to the state.~~
-## block_hashes
-block_number -> hash
+
 
 
 # Data structures for convenience of the analysis

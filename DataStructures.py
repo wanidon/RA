@@ -8,15 +8,16 @@ WORDBYTESIZE = WORDBITSIZE // 8
 
 class Stack():
     # def __init__(self, blockNumber=0, stdata=deque(), numStackVar=0):
-    def __init__(self, blockNumber=0, stdata_and_numStackVar=(deque(), 0)):
+    # def __init__(self, blockNumber=0, stdata_and_numStackVar=(deque(), 0)):
+    def __init__(self, blockNumber=0, stdata=deque(), numStackVar=0):
         # blockNumber will be VM object's member
         self.blockNumber = blockNumber
         self.stackdata = stdata_and_numStackVar[0]
         self.size = lambda: len(self.stackdata)
         self.numStackVar = stdata_and_numStackVar[1]
 
-    def generate_copy(self):
-        return deepcopy(self.stackdata), self.numStackVar
+    def generate_copy(self, new_block_number):
+        return Stack(new_block_number, deepcopy(self.stackdata), self.numStackVar)
 
     def generateStackVar(self):
         self.numStackVar += 1
@@ -37,6 +38,7 @@ class Stack():
             return self.stackdata.pop()
         else:
             # generate a symbolic variable
+            # TODO this may cause stack underflow
             return self.generateStackVar()
 
     def swapx(self, x):
@@ -135,9 +137,19 @@ class Storage():
 
 
 # TODO return data
+class Returndata():
+    pass
 # call data is included in the execution environment
 
 
+class Accounts():
+    def
+class Execution_environment():
+    pass
+class Machine_state():
+    pass
+class System_state():
+    pass
 if __name__ == '__main__':
     m = Memory()
     m.mstore(0,BitVec("hoge",256))
