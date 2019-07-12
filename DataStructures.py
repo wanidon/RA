@@ -111,6 +111,8 @@ class Memory():
     def msize(self):
         return self.memsize
 
+    # TODO generate copy
+
 
 class Storage():
     def __init__(self, block_number, storage_data_and_num_storage_var=({}, 0)):
@@ -134,12 +136,14 @@ class Storage():
 
     def sstore(self, key, value):
         self.storage_data[key] = value
+    # TODO generate copy
 
 
 # TODO return data
 class Returndata():
     pass
-# call data is included in the execution environment
+class Calldata:
+    pass
 
 class System_state:
     def __init__(self):
@@ -149,9 +153,9 @@ class System_state:
     def add_account(self,code: str):
         self.accounts.append(Account())
 class Account:
-    def __init__(self, code: str, storage: Storage, account_num: int):
+    def __init__(self, code: str, account_num: int):
         self.code = code
-        self.storage = storage
+        self.codesize = lambda:len(code)
         self.account_num = account_num
         self.balance = BitVec('account_balance_{}'.format(self.account_num), 256)
         self.CFG_nodes = []
@@ -162,13 +166,25 @@ class Account:
 
 
 
-class Machine_state:
-    def __init__(self, memory=Memory(), stack=Stack()):
+class Execution_state:
+    def __init__(self, pc=0, memory=Memory(), stack=Stack(), storage=Storage(), returndata=Returndata(), calldata=Calldata()):
+        self.pc = pc
+        self.memory = memory
+        self.stack = stack
+        self.storage = storage
+        self.returndata = returndata
+        self.calldata = calldata
 
-class Execution_environment():
+
+class Execution_environment:
+    def __init__(self, Ia=Bit):
     pass
 
 
+class Node:
+    def __init__(self, cond_exp_for_JUMPI=False, cond_exp_to_reach_this=[]):
+        self.cond_exp_for_JUMPI = cond_exp_for_JUMPI
+        self.cond_exp_to_reach_this = cond_exp_to_reach_this
 if __name__ == '__main__':
     m = Memory()
     m.mstore(0,BitVec("hoge",256))
