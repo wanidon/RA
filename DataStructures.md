@@ -1,20 +1,33 @@
-<!--
+
 # parts
 ## Storage
 ## Memory
 ## Stack
 ## Returndata
 Unlimited byte array similar to  memory. When the size of return value is fixed, it looks like the stack is being used as a place to store the return value.
-##Calldata
--->
+## Calldata
+## Node
+Each CFG node holds its own Execution_state at the end of its symbolic execution.
+- node_number
+- Execution_state ~~Machine_state~~  
+snapshot of execution state
+- mnemonics,  with the number of lines (bytes) contained in this node, list of (bytes,mnemonic)
+- List of conditional expressions to reach this node
+- Conditional expression for JUMPI
+- ~~origin~~
+- ~~destination~~
+
+
 # execution of this tool
 ## System_state
 denoted σ, generated once, ~~the mapping between account_address -> Account~~
-- list of Accounts
+- list of execution_environment
 - block_hashes, the mapping between block_number -> hash
+
 # execution of contract
 ## Execution_environment
 denoted I, generated for each execution
+- eenum, number of execution environment
 - Ia, the address of the account which owns the code that is executing. == *address(this)*
 - ~~Io,the sender address of the transaction that originated this execution.~~
 - Ip, the price of gas in the transaction that origi- nated this execution. == *tx.gasprice*
@@ -31,7 +44,7 @@ this will be used to receive data
     - *block.gaslimit*
 - ~~Ie, the depth of the present message-call or contract-creation (i.e. the number of CALLs or CREATEs being executed at present).~~
 - ~~Iw, the permission to make modifications to the state.~~
-
+- list of account
 
 ## Execution_state ~~Machine_state~~
 denoted µ, generated for each execution and stored each CFG as snapshot. differently from original Ethereum, this includes Storage for convinience to analysis
@@ -45,29 +58,17 @@ this will be used to send data
 - ~~gas_available~~
 - ~~i (memsize?)~~
 
-# contract
+## CFG_manager
+- list of Node
+- edges {origin:[destnode1,destnode2,,,]}
+- CFG_filename
+
+# execution
 ## Account
 generated for each contract, differently from original Ethereum, it (will) only holds immutable variables
+- account_num
 - code,EVM bytecode, immutable
 - codesize,len(code), immutable
 - balance, mutable?
-- the list of CFG node, e.g. [node1,node2,,]
-- the edges of CFG, e.g.{origin_node:[dest1,dest2]}
-- account_num
-- cfg_filename
 
-## Node
-Each CFG node holds its own Execution_state at the end of its symbolic execution.
-- Execution_state ~~Machine_state~~  
-snapshot of execution state
-- Code with the number of lines (bytes) contained in this node
-- List of conditional expressions to reach this node
-- Conditional expression for JUMPI
-- Conditional expression to reach this node
-- ~~origin~~
-- ~~destination~~
-- node_number
-
-## edges
-- node_number -> [dest1,dest2,,,]
 

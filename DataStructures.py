@@ -144,26 +144,48 @@ class Returndata():
     pass
 class Calldata:
     pass
+class Node:
+    def __init__(self, node_number: int, ond_exp_for_JUMPI=False, cond_exp_to_reach_this=[]):
+        self.node_number = node_number
+        self.execution_state = None
+        self.mnemonics = []
+        self.cond_exps_to_reach_this = cond_exps_to_reach_this
+        self.cond_exp_for_JUMPI = cond_exp_for_JUMPI
+
 
 class System_state:
     def __init__(self):
-        self.accounts = []
+        self.execution_environments = []
         self.block_hashes = {}
+
+    def generate_execution_environment(self):
+        pass
+    '''
+     IH= {
+            'coinbase': BitVec('coinbase_{}'.format(eenum), 256),
+            'timestamp': BitVec('timestamp_{}'.format(eenum), 256),
+            'number': BitVec('blocknumber_{}'.format(eenum), 256),
+            'difficulty': BitVec('difficulty_{}'.format(eenum), 256),
+            'gaslimit': BitVec('_{}'.format(eenum), 256)
+        }
+    '''
+
+
+
+class Execution_environment:
+    def __init__(self, eenum:int, Ia:BitVec, Ip:BitVec, Id:BitVec, Is:BitVec, Iv:BitVec, Ib:BitVec, IH:dict):
+        self.eenum = eenum
+        self.this_address = Ia
+        self.gasprice = Ip
+        self.msg_data = Id
+        self.msg_caller = Is
+        self.msg_value = Iv
+        self.this_code = Ib
+        self.block_header = IH
+        self.accounts = []
 
     def add_account(self,code: str):
         self.accounts.append(Account())
-class Account:
-    def __init__(self, code: str, account_num: int):
-        self.code = code
-        self.codesize = lambda:len(code)
-        self.account_num = account_num
-        self.balance = BitVec('account_balance_{}'.format(self.account_num), 256)
-        self.CFG_nodes = []
-        self.CFG_edges = {}
-        self.CFG_filename = "contract{}".format(self.account_num)
-
-
-
 
 
 class Execution_state:
@@ -175,16 +197,27 @@ class Execution_state:
         self.returndata = returndata
         self.calldata = calldata
 
+class CFG_manager:
+    def __init__(self, eenum:int):
+        self.eenum = eenum
+        self.Nodes = []
+        self.edges = {}
+        self.CFG_filename = "CFG_{}".format(self.eenum)
 
-class Execution_environment:
-    def __init__(self, Ia=Bit):
-    pass
+
+class Account:
+    def __init__(self, code: str, account_num: int):
+        self.code = code
+        self.codesize = lambda:len(code)
+        self.account_num = account_num
+        self.balance = BitVec('account_balance_{}'.format(self.account_num), 256)
 
 
-class Node:
-    def __init__(self, cond_exp_for_JUMPI=False, cond_exp_to_reach_this=[]):
-        self.cond_exp_for_JUMPI = cond_exp_for_JUMPI
-        self.cond_exp_to_reach_this = cond_exp_to_reach_this
+
+
+
+
+
 if __name__ == '__main__':
     m = Memory()
     m.mstore(0,BitVec("hoge",256))
