@@ -1,6 +1,7 @@
 from collections import deque
 from copy import deepcopy
-from z3 import BitVec, BitVecVal, Concat, Extract, simplify
+from z3 import BitVec, BitVecVal, BitVecRef, Concat, Extract, simplify
+from utils import isBitVecRef256
 
 WORDBITSIZE = 256
 WORDBYTESIZE = WORDBITSIZE // 8
@@ -11,10 +12,10 @@ class Stack():
     # def __init__(self, blockNumber=0, stdata_and_numStackVar=(deque(), 0)):
     def __init__(self, blockNumber=0, stdata=deque(), numStackVar=0):
         # blockNumber will be VM object's member
-        self.blockNumber = blockNumber
-        self.stackdata = stdata_and_numStackVar[0]
-        self.size = lambda: len(self.stackdata)
-        self.numStackVar = stdata_and_numStackVar[1]
+        self.__blockNumber = blockNumber
+        self.__stackdata = stdata_and_numStackVar[0]
+        self.__size = lambda: len(self.stackdata) # this will be removed
+        self.__numStackVar = stdata_and_numStackVar[1]
 
     def generate_copy(self, new_block_number):
         return Stack(new_block_number, deepcopy(self.stackdata), self.numStackVar)
@@ -25,13 +26,13 @@ class Stack():
             'stackVar{}-{}'.format(self.blockNumber, self.numStackVar),
             256)
 
-    def push(self, w):
-        if self.size() < 1023:
-            # w must be a 256bit-bitvec object
-            self.stackdata.append(w)
-        else:
-            # TODO stack limit reached 1024
-            pass
+    def push(self, w:BitVecRef):
+        if isBitVecRef256(w):
+            if self.size() < 1023:
+                self.stackdata.append(w)
+            else:
+                # TODO stack limit reached 1024
+                pass
 
     def pop(self):
         if self.size() >= 1:

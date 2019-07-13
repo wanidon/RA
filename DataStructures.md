@@ -47,7 +47,7 @@ this will be used to receive data
 - list of account
 
 ### Execution_state ~~Machine_state~~
-denoted µ, generated for each execution and stored each CFG as snapshot. differently from original Ethereum, this includes Storage for convinience to analysis
+denoted µ, generated for each execution and stored each CFG node as snapshot. differently from original Ethereum, this includes Storage for convinience to analysis
 - pc
 - Memory
 - Stack
