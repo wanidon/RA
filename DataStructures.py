@@ -82,16 +82,17 @@ class Memory():
             'memoryVar{}-{}'.format(self.blockNumber, self.numMemoryVar),
             256)
 
-    def mstore(self, offset:int, value:int):
+    def mstore(self, offset:int, value:BitVecRef):
         if offset + WORDBYTESIZE > self.size():
             d = offset + WORDBYTESIZE - self.size()
             self.memdata.extend([BitVecVal(0, 8) for _ in range(d)])
 
         for i in range(WORDBYTESIZE):
-            self.memdata[offset+i] = Extract(i*8+7, i*8, value)
+            self.memdata[offset+i] = Extract(i*8+7, i*8, checkBitVecRef256(value))
 
 
     # TODO mstore8
+    def mstore8(self, value:)
 
 
 
