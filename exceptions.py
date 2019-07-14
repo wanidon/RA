@@ -1,9 +1,10 @@
 class RuntimeException(Exception):
-    # __repr__ = lambda: 'runtime error'
-    # __str__ = lambda: 'runtime error'
-    pass
+    __str__ = lambda self: 'Runtime error.'
 
-class NotBitVecRef256Exception(RuntimeException):
-    __repr__ = lambda self: 'The given object is not 256bit-BitVector.'
-    __str__ = __repr__
-    #'The given object is not 256bit-BitVector.'
+class DevelopmentException(Exception):
+    __str__ = lambda self: 'Implementation or design error.'
+
+class NotBitVecRef256Exception(DevelopmentException):
+    def __init():
+        super().__init__()
+    __str__ = lambda self: super().__str__() + ' The given object is not 256bit-BitVector.'

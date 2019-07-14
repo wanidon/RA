@@ -7,6 +7,9 @@ s = Solver()
 # s.add(x1 == 20)
 # s.add(x2 == 30)
 # r = s.check()
+def hoge(fuga:BitVecVal):
+    return fuga
+print(hoge(BitVec('yyyyy',123)))
 s.add(x1==20)
 s.add(x2==x1)
 print(s.push())

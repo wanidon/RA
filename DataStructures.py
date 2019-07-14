@@ -1,7 +1,7 @@
 from collections import deque
 from copy import deepcopy
 from z3 import BitVec, BitVecVal, BitVecRef, Concat, Extract, simplify
-from utils import isBitVecRef256
+from utils import checkBitVecRef256
 
 WORDBITSIZE = 256
 WORDBYTESIZE = WORDBITSIZE // 8
@@ -10,14 +10,16 @@ WORDBYTESIZE = WORDBITSIZE // 8
 class Stack():
     # def __init__(self, blockNumber=0, stdata=deque(), numStackVar=0):
     # def __init__(self, blockNumber=0, stdata_and_numStackVar=(deque(), 0)):
+    # TODO refacturing field name
     def __init__(self, blockNumber=0, stdata=deque(), numStackVar=0):
         # blockNumber will be VM object's member
-        self.__blockNumber = blockNumber
-        self.__stackdata = stdata_and_numStackVar[0]
-        self.__size = lambda: len(self.stackdata) # this will be removed
-        self.__numStackVar = stdata_and_numStackVar[1]
+        self.blockNumber = blockNumber
+        self.stackdata = stdata
+        self.numStackVar = numStackVar
 
-    def generate_copy(self, new_block_number):
+    size = lambda self: len(self.stackdata) # this will be removed
+
+    def duplicate(self, new_block_number:int):
         return Stack(new_block_number, deepcopy(self.stackdata), self.numStackVar)
 
     def generateStackVar(self):
@@ -27,22 +29,21 @@ class Stack():
             256)
 
     def push(self, w:BitVecRef):
-        if isBitVecRef256(w):
-            if self.size() < 1023:
-                self.stackdata.append(w)
-            else:
-                # TODO stack limit reached 1024
-                pass
+        if self.size() < 1023:
+            self.stackdata.append(checkBitVecRef256(w))
+        else:
+            # TODO stack limit reached 1024
+            pass
 
-    def pop(self):
+    def pop(self) -> BitVecRef:
         if self.size() >= 1:
-            return self.stackdata.pop()
+            return checkBitVecRef256(self.stackdata.pop())
         else:
             # generate a symbolic variable
             # TODO this may cause stack underflow
             return self.generateStackVar()
 
-    def swapx(self, x):
+    def swapx(self, x:int):
         if x < 1 or 16 < x:
             # TODO error due to misshandle opcode
             pass
@@ -55,7 +56,7 @@ class Stack():
         self.stackdata[self.size() - 1] = self.stackdata[self.size() - 1 - x]
         self.stackdata[self.size() - 1 - x] = a
 
-    def dupx(self, x):
+    def dupx(self, x:int):
         if x < 1 or 16 < x:
             # TODO error due to misshandle opcode
             pass
@@ -81,7 +82,7 @@ class Memory():
             'memoryVar{}-{}'.format(self.blockNumber, self.numMemoryVar),
             256)
 
-    def mstore(self, offset, value):
+    def mstore(self, offset:int, value:int):
         if offset + WORDBYTESIZE > self.size():
             d = offset + WORDBYTESIZE - self.size()
             self.memdata.extend([BitVecVal(0, 8) for _ in range(d)])
@@ -190,7 +191,14 @@ class Execution_environment:
 
 
 class Execution_state:
-    def __init__(self, pc=0, memory=Memory(), stack=Stack(), storage=Storage(), returndata=Returndata(), calldata=Calldata()):
+    def __init__(self,
+        pc=0,
+        memory=Memory(),
+        stack=Stack(),
+        storage=Storage(0),
+        returndata=Returndata(), 
+        calldata=Calldata()
+        ):
         self.pc = pc
         self.memory = memory
         self.stack = stack
@@ -245,7 +253,7 @@ if __name__ == '__main__':
         sys.stdout.write(str(s.stackdata[i]))
         sys.stdout.write(' ')
 
-    s2 = Stack(1, (s.generate_copy()))
+    s2 = Stack(1, (s.duplicate(1)))
     for i in range(s2.size()):
         sys.stdout.write('i={} '.format(i))
         sys.stdout.write(str(simplify(s2.stackdata[i] * BitVecVal(2, 256) / BitVecVal(2, 256))))
