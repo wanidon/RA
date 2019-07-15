@@ -1,8 +1,8 @@
-from DataStructures import Stack,Memory,Storage,Returndata,Execution_environment,System_state,Machine_state
+from data_strucutures import Stack,Memory,Storage,Returndata,Execution_environment,System_state,Machine_state
 from web3 import Web3
 
 
-class Operator():
+class VM():
     def __init__(self,
     machine_state: Machine_state,
     system_state: System_state,

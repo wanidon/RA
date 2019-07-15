@@ -1,12 +1,12 @@
 from z3 import BitVecRef
 
-from exceptions import NotBitVecRef256Exception
+from exceptions import NotBitVecRef256Erorr
 
 def checkBitVecRef256(word):
     if isinstance(word,BitVecRef) and word.size() == 256:
         return word
     else:
-        raise NotBitVecRef256Exception()
+        raise NotBitVecRef256Erorr()
 
 
 
