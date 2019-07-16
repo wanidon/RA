@@ -12,7 +12,7 @@ Each CFG node holds its own Execution_state at the end of its symbolic execution
 - Execution_state ~~Machine_state~~  
 snapshot of execution state
 - mnemonics,  with the number of lines (bytes) contained in this node, list of (bytes,mnemonic)
-- List of conditional expressions to reach this node
+- List of conditional expressions (path conditions) to reach this node
 - Conditional expression for JUMPI
 - ~~origin~~
 - ~~destination~~
