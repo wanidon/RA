@@ -76,7 +76,7 @@ class Memory():
         self.__size = lambda: len(self.__memdata)
         self.__numMemoryVar = numMemoryVar
 
-    def generateMemoryVar(self):
+    def __generateMemoryVar(self):
         self.__numMemoryVar += 1
         return BitVec(
             'memoryVar{}-{}'.format(self.__blockNumber, self.__numMemoryVar),
@@ -102,7 +102,7 @@ class Memory():
         if offset + WORDBYTESIZE > self.__size():
             # ~ index out of bounds ~
             # generate a symblolic variable
-            newmemvar = self.generateMemoryVar()
+            newmemvar = self.__generateMemoryVar()
             self.mstore(offset, newmemvar)
             return newmemvar
 
@@ -114,7 +114,7 @@ class Memory():
                 Concat(self.__memdata[offset + WORDBYTESIZE:offset:-1]))
 
     def msize(self):
-        return self.memsize
+        return self.__size()
 
     # TODO generate copy
 
