@@ -13,31 +13,31 @@ class Stack():
     # TODO refacturing field name
     def __init__(self, blockNumber=0, stdata=deque(), numStackVar=0):
         # blockNumber will be VM object's member
-        self.blockNumber = blockNumber
-        self.stackdata = stdata
-        self.numStackVar = numStackVar
+        self.__blockNumber = blockNumber
+        self.__stackdata = stdata
+        self.__numStackVar = numStackVar
 
     size = lambda self: len(self.stackdata)
 
     def duplicate(self, new_block_number:int):
-        return Stack(new_block_number, deepcopy(self.stackdata), self.numStackVar)
+        return Stack(new_block_number, deepcopy(self.__stackdata), self.__numStackVar)
 
     def generateStackVar(self):
-        self.numStackVar += 1
+        self.__numStackVar += 1
         return BitVec(
-            'stackVar{}-{}'.format(self.blockNumber, self.numStackVar),
+            'stackVar{}-{}'.format(self.__blockNumber, self.__numStackVar),
             256)
 
     def push(self, w:BitVecRef):
         if self.size() < 1023:
-            self.stackdata.append(checkBitVecRef256(w))
+            self.__stackdata.append(checkBitVecRef256(w))
         else:
             # TODO stack limit reached 1024
             pass
 
     def pop(self) -> BitVecRef:
         if self.size() >= 1:
-            return checkBitVecRef256(self.stackdata.pop())
+            return checkBitVecRef256(self.__stackdata.pop())
         else:
             # generate a symbolic variable
             # TODO this may cause stack underflow
@@ -50,11 +50,11 @@ class Stack():
 
         if x + 1 > self.size():
             for _ in range(x + 1 - self.size()):
-                self.stackdata.appendleft(self.generateStackVar)
+                self.__stackdata.appendleft(self.generateStackVar)
 
-        a = self.stackdata[self.size() - 1]
-        self.stackdata[self.size() - 1] = self.stackdata[self.size() - 1 - x]
-        self.stackdata[self.size() - 1 - x] = a
+        a = self.__stackdata[self.size() - 1]
+        self.__stackdata[self.size() - 1] = self.__stackdata[self.size() - 1 - x]
+        self.__stackdata[self.size() - 1 - x] = a
 
     def dupx(self, x:int):
         if x < 1 or 16 < x:
@@ -63,9 +63,9 @@ class Stack():
 
         if x > self.size():
             for _ in range(x - self.size()):
-                self.stackdata.appendleft(self.generateStackVar)
+                self.__stackdata.appendleft(self.generateStackVar)
 
-        self.stackdata.append(self.stackdata[self.size() - x])
+        self.__stackdata.append(self.__stackdata[self.size() - x])
 
 
 class Memory():
@@ -154,7 +154,7 @@ class Node:
         self.node_number = node_number
         self.execution_state = None
         self.mnemonics = []
-        self.cond_exps_to_reach_this = cond_exps_to_reach_this
+        self.path_conditions = cond_exps_to_reach_this
         self.cond_exp_for_JUMPI = cond_exp_for_JUMPI
 
 
@@ -253,13 +253,13 @@ if __name__ == '__main__':
     s.swapx(4)
     import sys
     for i in range(s.size()):
-        sys.stdout.write(str(s.stackdata[i]))
+        sys.stdout.write(str(s.__stackdata[i]))
         sys.stdout.write(' ')
 
     s2 = s.duplicate(1)
     for i in range(s2.size()):
         sys.stdout.write('i={} '.format(i))
-        sys.stdout.write(str(simplify(s2.stackdata[i] * BitVecVal(2, 256) / BitVecVal(2, 256))))
+        sys.stdout.write(str(simplify(s2.__stackdata[i] * BitVecVal(2, 256) / BitVecVal(2, 256))))
         print()
 
 

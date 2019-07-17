@@ -22,7 +22,7 @@ s.dupx(5)
 s.swapx(4)
 import sys
 for i in range(s.size()):
-    sys.stdout.write(str(s.stackdata[i]))
+    sys.stdout.write(str(s.__stackdata[i]))
     sys.stdout.write(' ')
 
 s2 = s.duplicate(1)
