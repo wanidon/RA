@@ -71,24 +71,24 @@ class Stack():
 class Memory():
     def __init__(self, blockNumber=0, memdata=[], numMemoryVar=0):
         # blockNumber will be VM object's member
-        self.blockNumber = blockNumber
-        self.memdata = memdata
-        self.size = lambda: len(self.memdata)
-        self.numMemoryVar = numMemoryVar
+        self.__blockNumber = blockNumber
+        self.__memdata = memdata
+        self.__size = lambda: len(self.__memdata)
+        self.__numMemoryVar = numMemoryVar
 
     def generateMemoryVar(self):
-        self.numMemoryVar += 1
+        self.__numMemoryVar += 1
         return BitVec(
-            'memoryVar{}-{}'.format(self.blockNumber, self.numMemoryVar),
+            'memoryVar{}-{}'.format(self.__blockNumber, self.__numMemoryVar),
             256)
 
     def mstore(self, offset:int, value:BitVecRef):
-        if offset + WORDBYTESIZE > self.size():
-            d = offset + WORDBYTESIZE - self.size()
-            self.memdata.extend([BitVecVal(0, 8) for _ in range(d)])
+        if offset + WORDBYTESIZE > self.__size():
+            d = offset + WORDBYTESIZE - self.__size()
+            self.__memdata.extend([BitVecVal(0, 8) for _ in range(d)])
 
         for i in range(WORDBYTESIZE):
-            self.memdata[offset+i] = Extract(i*8+7, i*8, checkBitVecRef256(value))
+            self.__memdata[offset + i] = Extract(i * 8 + 7, i * 8, checkBitVecRef256(value))
 
 
     # TODO mstore8
@@ -99,7 +99,7 @@ class Memory():
 
 
     def mload(self, offset:int):
-        if offset + WORDBYTESIZE > self.size():
+        if offset + WORDBYTESIZE > self.__size():
             # ~ index out of bounds ~
             # generate a symblolic variable
             newmemvar = self.generateMemoryVar()
@@ -111,7 +111,7 @@ class Memory():
             pass
         else:
             return simplify(
-                Concat(self.memdata[offset+WORDBYTESIZE:offset:-1]))
+                Concat(self.__memdata[offset + WORDBYTESIZE:offset:-1]))
 
     def msize(self):
         return self.memsize
@@ -235,7 +235,7 @@ if __name__ == '__main__':
     m.mstore(0,BitVec("hoge",256))
     print(m.mload(0))
     print(m.mload(45))
-    print(m.memdata)
+    print(m.__memdata)
 
     s = Stack()
     t = BitVecVal(100+ 2**1024-1,256)
