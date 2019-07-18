@@ -120,28 +120,30 @@ class Memory():
 
 
 class Storage():
-    def __init__(self, block_number, storage_data_and_num_storage_var=({}, 0)):
-        self.block_number = block_number
-        self.storage_data = storage_data_and_num_storage_var[0]
-        self.num_storage_var = storage_data_and_num_storage_var[1]
+    def __init__(self, block_number, storage_data={}, num_storage_var=0):
+        self.__block_number = block_number
+        self.__storage_data = storage_data
+        self.__num_storage_var = num_storage_var
 
-    def generate_storage_var(self):
-        self.num_storage_var += 1
+    def __generate_storage_var(self):
+        self.__num_storage_var += 1
         return BitVec(
-            'storageVar{}-{}'.format(self.blockNumber, self.num_storage_var),
+            'storageVar{}-{}'.format(self.blockNumber, self.__num_storage_var),
             256)
 
-    def sload(self, key):
-        if key in self.storage_data.keys():
-            return self.storage_data[key]
+    def sload(self, key: BitVecRef):
+        if checkBitVecRef256(key) in self.__storage_data.keys():
+            return self.__storage_data[key]
         else:
-            newvar = self.generate_storage_var()
-            self.storage_data[key] = newvar
+            newvar = self.__generate_storage_var()
+            self.__storage_data[key] = newvar
             return newvar
 
-    def sstore(self, key, value):
-        self.storage_data[key] = value
-    # TODO generate copy
+    def sstore(self, key: BitVecRef, value: BitVecRef):
+        self.__storage_data[checkBitVecRef256(key)] = checkBitVecRef256(value)
+
+    def duplicate(self, block_number):
+        return Storage(block_number, deepcopy(self.__storage_data), self.__num_storage_var)
 
 
 # TODO return data
