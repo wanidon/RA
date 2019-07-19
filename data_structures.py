@@ -1,7 +1,8 @@
 from collections import deque
 from copy import deepcopy
-from z3 import BitVec, BitVecVal, BitVecRef, Concat, Extract, simplify
-from utils import checkBitVecRef256
+from z3 import BitVecRef, BitVecNumRef, Concat, Extract, simplify
+from utils import BitVec256, BitVecVal256, zero8bit, checkBitVecRef256
+from exceptions import DevelopmentErorr
 
 WORDBITSIZE = 256
 WORDBYTESIZE = WORDBITSIZE // 8
@@ -17,16 +18,14 @@ class Stack():
         self.__stackdata = stdata
         self.__numStackVar = numStackVar
 
-    size = lambda self: len(self.stackdata)
+    size = lambda self: len(self.__stackdata)
 
     def duplicate(self, new_block_number:int):
         return Stack(new_block_number, deepcopy(self.__stackdata), self.__numStackVar)
 
-    def generateStackVar(self):
+    def generateStackVar(self) -> BitVecRef:
         self.__numStackVar += 1
-        return BitVec(
-            'stackVar{}-{}'.format(self.__blockNumber, self.__numStackVar),
-            256)
+        return BitVec256('stackVar{}-{}'.format(self.__blockNumber, self.__numStackVar))
 
     def push(self, w:BitVecRef):
         if self.size() < 1023:
@@ -45,12 +44,11 @@ class Stack():
 
     def swapx(self, x:int):
         if x < 1 or 16 < x:
-            # TODO error due to misshandle opcode
-            pass
+            raise DevelopmentErorr()
 
         if x + 1 > self.size():
             for _ in range(x + 1 - self.size()):
-                self.__stackdata.appendleft(self.generateStackVar)
+                self.__stackdata.appendleft(self.generateStackVar())
 
         a = self.__stackdata[self.size() - 1]
         self.__stackdata[self.size() - 1] = self.__stackdata[self.size() - 1 - x]
@@ -58,14 +56,17 @@ class Stack():
 
     def dupx(self, x:int):
         if x < 1 or 16 < x:
-            # TODO error due to misshandle opcode
-            pass
+            raise DevelopmentErorr()
 
         if x > self.size():
             for _ in range(x - self.size()):
-                self.__stackdata.appendleft(self.generateStackVar)
+                self.__stackdata.appendleft(self.generateStackVar())
 
         self.__stackdata.append(self.__stackdata[self.size() - x])
+
+    def show_data(self):
+        for i in range(self.size())[::-1]:
+            print("{}:{}".format(i, self.__stackdata[i]))
 
 
 class Memory():
@@ -78,14 +79,12 @@ class Memory():
 
     def __generateMemoryVar(self):
         self.__numMemoryVar += 1
-        return BitVec(
-            'memoryVar{}-{}'.format(self.__blockNumber, self.__numMemoryVar),
-            256)
+        return BitVec256('memoryVar{}-{}'.format(self.__blockNumber, self.__numMemoryVar))
 
     def mstore(self, offset:int, value:BitVecRef):
         if offset + WORDBYTESIZE > self.__size():
             d = offset + WORDBYTESIZE - self.__size()
-            self.__memdata.extend([BitVecVal(0, 8) for _ in range(d)])
+            self.__memdata.extend([zero8bit() for _ in range(d)])
 
         for i in range(WORDBYTESIZE):
             self.__memdata[offset + i] = Extract(i * 8 + 7, i * 8, checkBitVecRef256(value))
@@ -120,19 +119,18 @@ class Memory():
 
 
 class Storage():
-    def __init__(self, block_number, storage_data={}, num_storage_var=0):
+    def __init__(self, block_number=0, storage_data={}, num_storage_var=0):
         self.__block_number = block_number
         self.__storage_data = storage_data
         self.__num_storage_var = num_storage_var
 
     def __generate_storage_var(self):
         self.__num_storage_var += 1
-        return BitVec(
-            'storageVar{}-{}'.format(self.blockNumber, self.__num_storage_var),
-            256)
+        return BitVec256('storageVar{}-{}'.format(self.__block_number, self.__num_storage_var))
 
-    def sload(self, key: BitVecRef):
-        if checkBitVecRef256(key) in self.__storage_data.keys():
+    def sload(self, key: BitVecRef) -> BitVecRef:
+        key = str(checkBitVecRef256(key))
+        if key in self.__storage_data.keys():
             return self.__storage_data[key]
         else:
             newvar = self.__generate_storage_var()
@@ -140,10 +138,22 @@ class Storage():
             return newvar
 
     def sstore(self, key: BitVecRef, value: BitVecRef):
-        self.__storage_data[checkBitVecRef256(key)] = checkBitVecRef256(value)
+        checkBitVecRef256(key)
+        checkBitVecRef256(value)
+        # # concrete value
+        # if type(key) == BitVecNumRef:
+        #     key = key.as_long()
+        # # symbolic variable
+        # else:
+        #     key = str(key)
+        self.__storage_data[str(key)] = value
 
     def duplicate(self, block_number):
         return Storage(block_number, deepcopy(self.__storage_data), self.__num_storage_var)
+
+    def show_data(self):
+        for k,v in self.__storage_data.items():
+            print('key={}, value={}'.format(k, v))
 
 
 # TODO return data
@@ -180,7 +190,7 @@ class System_state:
 
 
 class Execution_environment:
-    def __init__(self, eenum:int, Ia:BitVec, Ip:BitVec, Id:BitVec, Is:BitVec, Iv:BitVec, Ib:BitVec, IH:dict):
+    def __init__(self, eenum:int, Ia:BitVec256, Ip:BitVec256, Id:BitVec256, Is:BitVec256, Iv:BitVec256, Ib:BitVec256, IH:dict):
         self.eenum = eenum
         self.this_address = Ia
         self.gasprice = Ip

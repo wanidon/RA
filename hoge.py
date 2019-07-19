@@ -35,3 +35,7 @@ print(simplify(Or(p,(And(p,q)))))
 solve(p == Or(q,(And(q,r))), p==True,q==False)
 
 print()
+
+x = BitVecVal(678,256)
+xname = str(x)
+print(xname,type(xname))

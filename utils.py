@@ -1,9 +1,18 @@
-from z3 import BitVecRef
-
+from z3 import BitVecRef, BitVec, BitVecVal, BitVecVal
 from exceptions import NotBitVecRef256Erorr
 
+def BitVec256(name) -> BitVecRef:
+    return BitVec(name,256)
+
+def BitVecVal256(val) -> BitVecRef:
+    return BitVecVal(val, 256)
+
+def zero8bit()-> BitVecRef:
+    return BitVecVal(0,8)
+
 def checkBitVecRef256(word):
-    if isinstance(word,BitVecRef) and word.size() == 256:
+
+    if isinstance(word, BitVecRef) and word.size() == 256:
         return word
     else:
         raise NotBitVecRef256Erorr()
