@@ -76,6 +76,7 @@ generated for each contract, differently from original Ethereum, it (will) only 
 # Consideration on load and store to memory when using symbolic variable as index
 
 
+
 if
     mem = [3,0,0,,,,]
     mem[Extract(7, 0, x)] = 6
