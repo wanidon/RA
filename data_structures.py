@@ -108,7 +108,8 @@ class Memory():
 
 
 
-    def mload(self, offset:int):
+    def mload(self, offset:BitVecRef):
+        # TODO: the case offset is symbolic var
         if offset + WORDBYTESIZE > self.__size():
             # ~ index out of bounds ~
             # generate a symblolic variable

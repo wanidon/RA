@@ -149,5 +149,7 @@ if
             Extract(255, 248, y)==Extract(15, 8, w),
             Extract(247, 240, y)==Extract(7, 0, w)
         ),,,
-        x==v => y==w
+        x==v => y==w,,,
+        Extract(7, 0, x)==Extract(255, 248, v) => Extract(7, 0, y)==Extract(255, 248, w)
+            
     )
