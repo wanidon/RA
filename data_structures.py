@@ -1,8 +1,10 @@
+# coding:utf-8
 from collections import deque
 from copy import deepcopy
 from z3 import BitVecRef, BitVecNumRef, Concat, Extract, simplify
 from utils import BitVec256, BitVecVal256, zero8bit, checkBitVecRef256
 from exceptions import DevelopmentErorr
+from collections import defaultdict
 
 WORDBITSIZE = 256
 WORDBYTESIZE = WORDBITSIZE // 8
@@ -70,21 +72,30 @@ class Stack():
 
 
 class Memory():
-    def __init__(self, blockNumber=0, memdata=[], numMemoryVar=0):
+    def __init__(self, blockNumber=0, numMemoryVar=0, memdata=None):
         # blockNumber will be VM object's member
         self.__blockNumber = blockNumber
-        self.__memdata = memdata
+        self.__memdata = defaultdict(zero8bit()) if memdata is None else memdata
         self.__size = lambda: len(self.__memdata)
         self.__numMemoryVar = numMemoryVar
 
+        '''
+        
+        '''
     def __generateMemoryVar(self):
         self.__numMemoryVar += 1
         return BitVec256('memoryVar{}-{}'.format(self.__blockNumber, self.__numMemoryVar))
 
-    def mstore(self, offset:int, value:BitVecRef):
-        if offset + WORDBYTESIZE > self.__size():
-            d = offset + WORDBYTESIZE - self.__size()
-            self.__memdata.extend([zero8bit() for _ in range(d)])
+    def mstore(self, offset: BitVecRef, value: BitVecRef):
+        # for list
+        # if offset + WORDBYTESIZE > self.__size():
+        #     d = offset + WORDBYTESIZE - self.__size()
+        #     self.__memdata.extend([zero8bit() for _ in range(d)])
+
+        #  for dict
+        checkBitVecRef256(offset)
+        for i in range(self.__size(), offset + WORDBYTESIZE):
+            self.__memdata[str(i)] = zero8bit()
 
         for i in range(WORDBYTESIZE):
             self.__memdata[offset + i] = Extract(i * 8 + 7, i * 8, checkBitVecRef256(value))
@@ -242,37 +253,37 @@ class Account:
 
 
 
-if __name__ == '__main__':
-    m = Memory()
-    m.mstore(0,BitVec("hoge",256))
-    print(m.mload(0))
-    print(m.mload(45))
-    print(m.__memdata)
-
-    s = Stack()
-    t = BitVecVal(100+ 2**1024-1,256)
-    print(t)
-    s.push(t)
-    print(s.pop())
-    print(s.pop())
-    s.push(BitVecVal(1,256))
-    s.push(BitVecVal(2,256))
-    s.push(BitVec("hoge",256))
-    s.push(BitVecVal(4,256))
-    s.swapx(1)
-    s.dupx(1)
-    s.dupx(5)
-    s.swapx(4)
-    import sys
-    for i in range(s.size()):
-        sys.stdout.write(str(s.__stackdata[i]))
-        sys.stdout.write(' ')
-
-    s2 = s.duplicate(1)
-    for i in range(s2.size()):
-        sys.stdout.write('i={} '.format(i))
-        sys.stdout.write(str(simplify(s2.__stackdata[i] * BitVecVal(2, 256) / BitVecVal(2, 256))))
-        print()
-
-
-
+# if __name__ == '__main__':
+#     m = Memory()
+#     m.mstore(0,BitVec("hoge",256))
+#     print(m.mload(0))
+#     print(m.mload(45))
+#     print(m.__memdata)
+#
+#     s = Stack()
+#     t = BitVecVal(100+ 2**1024-1,256)
+#     print(t)
+#     s.push(t)
+#     print(s.pop())
+#     print(s.pop())
+#     s.push(BitVecVal(1,256))
+#     s.push(BitVecVal(2,256))
+#     s.push(BitVec("hoge",256))
+#     s.push(BitVecVal(4,256))
+#     s.swapx(1)
+#     s.dupx(1)
+#     s.dupx(5)
+#     s.swapx(4)
+#     import sys
+#     for i in range(s.size()):
+#         sys.stdout.write(str(s.__stackdata[i]))
+#         sys.stdout.write(' ')
+#
+#     s2 = s.duplicate(1)
+#     for i in range(s2.size()):
+#         sys.stdout.write('i={} '.format(i))
+#         sys.stdout.write(str(simplify(s2.__stackdata[i] * BitVecVal(2, 256) / BitVecVal(2, 256))))
+#         print()
+#
+#
+#

@@ -72,3 +72,82 @@ generated for each contract, differently from original Ethereum, it (will) only 
 - balance, mutable?
 
 
+
+# Consideration on load and store to memory when using symbolic variable as index
+
+
+if
+    mem = [3,0,0,,,,]
+    mem[Extract(7, 0, x)] = 6
+    mem[Extract(15, 8, x)] = 0
+    ...
+    mem[Extract(255, 248, x)] = 0
+→
+    Or(
+    (Extract(7, 0, x) == 0 => 3==6),
+    (Extract(7, 0, x) == 1 => 0==6),,,
+    )
+→ Extract(7, 0, x) != 0 and Extract(7, 0, x) != 1
+→bad
+
+if
+    mem = [3,6,8,4,0,0,0,0,,,,]
+    mem[Extract(7, 0, x)] = Extract(7, 0, y)
+    mem[Extract(15, 8, x)] = Extract(15, 8, y)
+    ...
+    mem[Extract(255, 248, x)] = Extract(255, 248, y)
+→
+    Or(
+        And(
+            (Extract(7, 0, x)==0 => Extract(7, 0, y)==3),
+            (Extract(7, 0, x)==1 => Extract(7, 0, y)==6),,,
+        ),
+        And(
+            (Extract(7, 0, x)==1 => Extract(7, 0, y)==6),
+        )
+    )
+
+→
+    Or(
+        And(
+        (x == 0 => y == Concat(mem[8-1,0-1,-1])),
+        (x == 1 => y == Concat(mem[8+1-1,0+1-1,-1])),,,
+        (x == i => y == Concat(mem[8+i-1,i-1,-1])
+        )
+    )
+→
+    Or(
+        And(
+        for i in range(memsize()-8):
+            (x == i => y == Concat(mem[i+7,i-1,-1]) #from i+7 to i
+        )
+    )
+
+
+
+
+
+
+if
+    mem[Extract(7, 0, x)] = Extract(7, 0, y)
+    mem[Extract(15, 8, x)] = Extract(15, 8, y)
+    ...
+    mem[Extract(255, 248, x)] = Extract(255, 248, y)
+
+    mem[Extract(7, 0, v)] = Extract(7, 0, w)
+    mem[Extract(15, 8, v)] = Extract(15, 8, w)
+    ...
+    mem[Extract(255, 248, v)] = Extract(255, 248, w)
+→
+    Or(
+        (x!=v => y!=w),
+        (Extract(255, 248, x)==Extract(7, 0, v) => Extract(255, 248, y)==Extract(7, 0, w)),
+        And(
+            Extract(255, 248, x)==Extract(15, 8, v),
+            Extract(247, 240, x)==Extract(7, 0, v)
+        ) => And(
+            Extract(255, 248, y)==Extract(15, 8, w),
+            Extract(247, 240, y)==Extract(7, 0, w)
+        ),,,
+        x==v => y==w
+    )
