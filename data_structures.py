@@ -4,21 +4,21 @@ from copy import deepcopy
 from z3 import BitVecRef, BitVecNumRef, Concat, Extract, simplify
 from utils import BitVec256, BitVecVal256, zero8bit, checkBitVecRef256
 from exceptions import DevelopmentErorr
-from collections import defaultdict
+#from collections import defaultdict
 
 WORDBITSIZE = 256
 WORDBYTESIZE = WORDBITSIZE // 8
 
 
-class Stack():
+class Stack:
     # def __init__(self, blockNumber=0, stdata=deque(), numStackVar=0):
     # def __init__(self, blockNumber=0, stdata_and_numStackVar=(deque(), 0)):
     # TODO refacturing field name
-    def __init__(self, blockNumber=0, stdata=deque(), numStackVar=0):
+    def __init__(self, block_number=0, stdata=deque(), num_stack_var=0):
         # blockNumber will be VM object's member
-        self.__blockNumber = blockNumber
+        self.__blockNumber = block_number
         self.__stackdata = stdata
-        self.__numStackVar = numStackVar
+        self.__numStackVar = num_stack_var
 
     size = lambda self: len(self.__stackdata)
 
@@ -71,66 +71,87 @@ class Stack():
             print("{}:{}".format(i, self.__stackdata[i]))
 
 
-class Memory():
-    def __init__(self, blockNumber=0, numMemoryVar=0, memdata=None):
+class Memory:
+    # big-endian
+    def __init__(self, block_number=0, num_memory_var=0, immediate_data=[]):
         # blockNumber will be VM object's member
-        self.__blockNumber = blockNumber
-        self.__memdata = defaultdict(zero8bit()) if memdata is None else memdata
-        self.__size = lambda: len(self.__memdata)
-        self.__numMemoryVar = numMemoryVar
+        self.__blockNumber = block_number
+        self.__immediate_data = immediate_data
+        self.__size = lambda: len(self.__immediate_data)
+        self.__numMemoryVar = num_memory_var
 
-        '''
-        
-        '''
     def __generateMemoryVar(self):
         self.__numMemoryVar += 1
         return BitVec256('memoryVar{}-{}'.format(self.__blockNumber, self.__numMemoryVar))
 
-    def mstore(self, offset: BitVecRef, value: BitVecRef):
-        # for list
-        # if offset + WORDBYTESIZE > self.__size():
-        #     d = offset + WORDBYTESIZE - self.__size()
-        #     self.__memdata.extend([zero8bit() for _ in range(d)])
+    def mstore(self, offset: BitVecNumRef, value: BitVecRef):
+        if type(offset) != BitVecNumRef:
+            raise DevelopmentErorr('Does not support memory operations indexed by symbolic variables.')
+
+        offset = checkBitVecRef256(offset).as_long()
+        checkBitVecRef256(value)
+
+        if offset + WORDBYTESIZE > self.__size():
+            d = offset + WORDBYTESIZE - self.__size()
+            self.__immediate_data.extend([zero8bit() for _ in range(d)])
 
         #  for dict
-        checkBitVecRef256(offset)
-        for i in range(self.__size(), offset + WORDBYTESIZE):
-            self.__memdata[str(i)] = zero8bit()
-
+        #
+        # for i in range(self.__size(), offset + WORDBYTESIZE):
+        #     self.__memdata[str(i)] = zero8bit()
+        #
         for i in range(WORDBYTESIZE):
-            self.__memdata[offset + i] = Extract(i * 8 + 7, i * 8, checkBitVecRef256(value))
+            self.__immediate_data[offset + (WORDBYTESIZE - 1 - i)] = Extract(i * 8 + 7, i * 8, value)
 
+    def mstore8(self, offset: BitVecNumRef, value:BitVecRef):
+        if type(offset) != BitVecNumRef:
+            raise DevelopmentErorr('Does not support memory operations indexed by symbolic variables.')
 
-    # TODO mstore8
-    def mstore8(self, value:BitVecRef):
-        pass
+        offset = checkBitVecRef256(offset).as_long()
+        checkBitVecRef256(value)
 
+        if offset >= self.__size():
+            d = offset - self.__size() + 1
+            self.__immediate_data.extend([zero8bit() for _ in range(d)])
 
+        self.__immediate_data[offset] = simplify(Extract(7, 0, value))
 
+    def mload(self, offset: BitVecNumRef):
+        if type(checkBitVecRef256(offset)) is not BitVecNumRef:
+            raise DevelopmentErorr('Does not support memory operations indexed by symbolic variables.')
 
-    def mload(self, offset:BitVecRef):
-        # TODO: the case offset is symbolic var
+        offset = checkBitVecRef256(offset).as_long()
         if offset + WORDBYTESIZE > self.__size():
             # ~ index out of bounds ~
             # generate a symblolic variable
             newmemvar = self.__generateMemoryVar()
-            self.mstore(offset, newmemvar)
-            return newmemvar
+            d = offset + WORDBYTESIZE - self.__size()
+            if d < WORDBYTESIZE:
+                for i in range(d):
+                    self.__immediate_data.append(Extract((d - i - 1) * 8 + 7, (d - i - 1) * 8, newmemvar))
+                return simplify(Concat(self.__immediate_data[offset: WORDBYTESIZE+offset]))
+            else:
+                self.mstore(BitVecVal256(offset), newmemvar)
+                return newmemvar
 
         elif offset < 0:
             # TODO  index out of bounds
             pass
         else:
             return simplify(
-                Concat(self.__memdata[offset + WORDBYTESIZE:offset:-1]))
+                Concat(self.__immediate_data[offset: WORDBYTESIZE+offset]))
 
     def msize(self):
         return self.__size()
 
-    # TODO generate copy
+    def duplicate(self, block_number):
+        return Memory(block_number, deepcopy(self.__numMemoryVar), deepcopy(self.__immediate_data))
+
+    def show_data(self):
+        print(self.__immediate_data)
 
 
-class Storage():
+class Storage:
     def __init__(self, block_number=0, storage_data={}, num_storage_var=0):
         self.__block_number = block_number
         self.__storage_data = storage_data

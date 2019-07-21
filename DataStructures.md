@@ -72,11 +72,8 @@ generated for each contract, differently from original Ethereum, it (will) only 
 - balance, mutable?
 
 
-
-# Consideration on load and store to memory when using symbolic variable as index
-
-
-
+# Consideration of using symbolic variables as memory indexes
+## Consideration of loading and storing using symbolic variables as memory indexes
 if
     mem = [3,0,0,,,,]
     mem[Extract(7, 0, x)] = 6
@@ -154,3 +151,17 @@ if
         Extract(7, 0, x)==Extract(255, 248, v) => Extract(7, 0, y)==Extract(255, 248, w)
             
     )
+
+
+
+## Consideration on Memory Size Calculation Using Symbolic Variable as Memory Index
+1. the case a symbolic variable is used as index.
+If the number of immediate values is 30 and the symbolic variable is x,
+it is divided into two cases where x is less than 30 and 30 or more.
+But the symbolic variable x contains both cases.
+Therefore, the memory size can be x.
+1. the case two symbolic variables are used as index.
+If the symbolic variables are x and y, 
+it is divided into two cases where x is less than y and y or more.
+However, if memory size is x, a case where x is less than y is truncated.
+So the memory size cannot be decided. However, there may be a proposal to return multiple values as memory size candidates.
