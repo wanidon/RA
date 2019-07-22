@@ -4,7 +4,7 @@ from copy import deepcopy
 from z3 import BitVecRef, BitVecNumRef, Concat, Extract, simplify
 from utils import BitVec256, BitVecVal256, zero8bit, checkBitVecRef256
 from exceptions import DevelopmentErorr
-#from collections import defaultdict
+from collections import defaultdict
 
 WORDBITSIZE = 256
 WORDBYTESIZE = WORDBITSIZE // 8
@@ -73,7 +73,7 @@ class Stack:
 
 class Memory:
     # big-endian
-    def __init__(self, block_number=0, num_memory_var=0, immediate_data=[]):
+    def __init__(self, block_number=0, num_mmory_var=0, immediate_data=[]):
         # blockNumber will be VM object's member
         self.__blockNumber = block_number
         self.__immediate_data = immediate_data
@@ -192,15 +192,9 @@ class Storage:
 # TODO return data
 class Returndata():
     pass
+# TODO call data
 class Calldata:
     pass
-class Node:
-    def __init__(self, node_number: int, ond_exp_for_JUMPI=False, cond_exp_to_reach_this=[]):
-        self.node_number = node_number
-        self.execution_state = None
-        self.mnemonics = []
-        self.path_conditions = cond_exps_to_reach_this
-        self.cond_exp_for_JUMPI = cond_exp_for_JUMPI
 
 
 class System_state:
@@ -208,8 +202,8 @@ class System_state:
         self.execution_environments = []
         self.block_hashes = {}
 
-    def generate_execution_environment(self):
-        pass
+    # def generate_execution_environment(self):
+    #     pass
     '''
      IH= {
             'coinbase': BitVec('coinbase_{}'.format(eenum), 256),
@@ -254,20 +248,58 @@ class Execution_state:
         self.returndata = returndata
         self.calldata = calldata
 
+class BasicBlock:
+    def __init__(self, account_number : int, block_number: int, execution_state: Execution_state=None, cond_exps_to_reach_this: list=None, cond_exp_for_JUMPI:bool = False, ):
+        self.__account_number = account_number
+        self.__block_number = block_number
+        self.__execution_state = Execution_state() if execution_state is None else execution_state
+        self.mnemonics = []
+        self.path_conditions = [True] if cond_exps_to_reach_this is None else cond_exps_to_reach_this
+        self.cond_exp_for_JUMPI = cond_exp_for_JUMPI
+
+    def add_mnemonic(self, numbyte: int, mnemonic: str):
+        self.mnemonics.append((numbyte, mnemonic))
+
+    def get_mnemonic(self):
+        return self.mnemonics
+
+
+
 class CFG_manager:
     def __init__(self, eenum:int):
-        self.eenum = eenum
-        self.Nodes = []
-        self.edges = {}
-        self.CFG_filename = "CFG_{}".format(self.eenum)
+        self.__eenum = eenum
+        self.__basic_blocks = []
+        self.__visited_blocks = []
+        self.__edges = defaultdict([])
+        self.__CFG_name = "CFG_{}".format(self.eenum)
 
+    def add_basic_block(self, basic_block : BasicBlock):
+        self.__basic_blocks.append(basic_block)
+
+    def add_visited_block(self, basic_block : BasicBlock):
+        self.__visited_blocks.append(basic_block)
+
+    def get_basic_blocks(self):
+        return self.__basic_blocks
+
+    def get_visited_blocks(self):
+        return self.__visited_blocks
+
+    def add_edge(self, origin: BasicBlock, dest: BasicBlock):
+        self.__edges[origin].append(dest)
+
+    def get_dest_block(self, origin: BasicBlock):
+        return self.__edges[origin]
+
+    def get_CFG_name(self):
+        return self.__CFG_name
 
 class Account:
     def __init__(self, code: str, account_num: int):
         self.code = code
         self.codesize = lambda:len(code)
         self.account_num = account_num
-        self.balance = BitVec('account_balance_{}'.format(self.account_num), 256)
+        self.balance = BitVec256('account_balance_{}'.format(self.account_num))
 
 
 
