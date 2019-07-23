@@ -1,23 +1,30 @@
-from data_strucutures import Stack,Memory,Storage,Returndata,Execution_environment,System_state,Machine_state
+from data_structures import Stack, Memory, Storage, Returndata, Execution_environment, System_state, Machine_state, CfgManager, BasicBlock
 from web3 import Web3
 
 
 class VM():
     def __init__(self,
-    machine_state: Machine_state,
     system_state: System_state,
     exe_env: Execution_environment
     ):
-        self.µ = machine_state
-        self.σ = system_state
+
+        self.__σ = system_state
         self.I = Execution_environment
-        self.stack = machine_state.stack
-        self.memory = machine_statememory
-        self.storage = storage
-        self.returndata = returndata
+        self.__µ = Machine_state()
+        self.CFG_manager = CfgManager()
+
+        self.__tmp_block = BasicBlock()
+        self.__call_stack = [] # list of (I,next_pc)
+        self.__dfs_stack = [] # list of Basic_block
+        #self.returndata = returndata
 
 
     # 0s: Stop and Arithmetic Operations
+    def stop(self):
+        if self.__dfs_stack :
+
+
+
     # 10s: Comparison & Bitwise Logic Operations
     # 20s: SHA3
     def sha3():

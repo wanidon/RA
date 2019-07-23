@@ -232,30 +232,31 @@ class Execution_environment:
         self.accounts.append(Account())
 
 
-class Execution_state:
+class Machine_state:
     def __init__(self,
         pc=0,
         memory=Memory(),
         stack=Stack(),
-        storage=Storage(0),
-        returndata=Returndata(), 
-        calldata=Calldata()
+        # storage=Storage(),
+        #returndata=Returndata(),
+        #calldata=Calldata()
         ):
         self.pc = pc
         self.memory = memory
         self.stack = stack
-        self.storage = storage
-        self.returndata = returndata
-        self.calldata = calldata
+        # self.storage = storage
+        # self.returndata = returndata
+        # self.calldata = calldata
 
 class BasicBlock:
-    def __init__(self, account_number : int, block_number: int, execution_state: Execution_state=None, cond_exps_to_reach_this: list=None, cond_exp_for_JUMPI:bool = False, ):
+    def __init__(self, account_number : int, block_number: int, execution_state: Machine_state=None, storage:Storage=None, mnemonics:list=None, cond_exps_to_reach_this: list=None, cond_exp_for_JUMPI:bool = False, ):
         self.__account_number = account_number
         self.__block_number = block_number
-        self.__execution_state = Execution_state() if execution_state is None else execution_state
-        self.mnemonics = []
-        self.path_conditions = [True] if cond_exps_to_reach_this is None else cond_exps_to_reach_this
-        self.cond_exp_for_JUMPI = cond_exp_for_JUMPI
+        self.__execution_state = Machine_state() if execution_state is None else execution_state
+        self.__storage =  Storage() if storage is None else storage
+        self.__mnemonics = [] if mnemonics is None else mnemonics
+        self.__path_conditions = [True] if cond_exps_to_reach_this is None else cond_exps_to_reach_this
+        self.__cond_exp_for_JUMPI = cond_exp_for_JUMPI
 
     def add_mnemonic(self, numbyte: int, mnemonic: str):
         self.mnemonics.append((numbyte, mnemonic))
@@ -265,7 +266,7 @@ class BasicBlock:
 
 
 
-class CFG_manager:
+class CfgManager:
     def __init__(self, eenum:int):
         self.__eenum = eenum
         self.__basic_blocks = []
