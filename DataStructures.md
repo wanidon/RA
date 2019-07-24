@@ -10,12 +10,13 @@ Unlimited byte array similar to  memory. When the size of return value is fixed,
 Each CFG node holds its own Execution_state at the end of its symbolic execution.
 - account_number
 - block_number
-- Execution_state ~~Machine_state~~  
-snapshot of execution state
-- storage
+- machine_state
+- execution_state  
+just a reference
 - mnemonics,  with the number of lines (bytes) contained in this node, list of (bytes,mnemonic)
-- List of conditional expressions (path conditions) to reach this node
-- Conditional expression for JUMPI
+- path_condition ~~List of conditional expressions (path conditions) to reach this node~~
+- jump_condition  
+condition for JUMPI
 - dest_to_continue
 - dest_to_jump
 - ~~origin~~
@@ -60,14 +61,13 @@ mutable?
 - execution_environment
     execution environment about contract executing
 
-### Execution_state ~~Machine_state~~
-denoted µ, generated for each execution and a snapshot of this is stored in each CFG block.
+### Machine_state ~~Execution_state~~ 
+denoted µ, generated for each execution and a snapshot of this is stored in each CFG block.  
+For convinience of analysis, containing Stack
 - pc
 - Memory
 - Stack
-- Returndata
-- Calldata
-this will be used to send data
+- ~~Returndata~~
 - ~~gas_available~~
 - ~~i (memsize?)~~
 
@@ -80,7 +80,7 @@ indexed by block number, and contains the list of destinations [[dest_of_block_0
 
 ## contract
 ### Execution_environment
-denoted I, generated for each contract
+denoted I, generated for each contract  
 - eenum, number of execution environment
 - Ia, the address of the account which owns the code that is executing. == *address(this)*
 - ~~Io,the sender address of the transaction that originated this execution.~~
@@ -98,6 +98,9 @@ this will be used to receive data
     - *block.gaslimit*
 - ~~Ie, the depth of the present message-call or contract-creation (i.e. the number of CALLs or CREATEs being executed at present).~~
 - ~~Iw, the permission to make modifications to the state.~~
+
+
+
 
 
 # Consideration of using symbolic variables as memory indexes
