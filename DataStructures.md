@@ -10,18 +10,20 @@ Unlimited byte array similar to  memory. When the size of return value is fixed,
 Each CFG node holds its own Execution_state at the end of its symbolic execution.
 - account_number
 - block_number
+
 - machine_state
-- execution_state  
-just a reference
+- execution_state
 - mnemonics,  with the number of lines (bytes) contained in this node, list of (bytes,mnemonic)
 - path_condition ~~List of conditional expressions (path conditions) to reach this node~~
 - jump_condition  
 condition for JUMPI
-- dest_to_continue
-- dest_to_jump
+- (dest_to_continue)
+- (dest_to_jump)
 - ~~origin~~
 - ~~destination~~
-
+- call_stack
+- dfs_stack
+- CFG_name
 
 ## execution of this tool
 ### System_state
@@ -48,20 +50,25 @@ mutable?
 
 
 
-
-
-
 ## execution of contract
 ### VM
-- reference to system_state
-- execution_state
+##### フィールド
+- system_state (given as a parameter of the constructor)
 - CFG_manager
-- callstack  
-    for each contract creation (contract creation executes initializing code and return) or external contract call, this stores execution_environment and next_pc (program counter indicating return destination)
-- execution_environment
-    execution environment about contract executing
 
-### Machine_state ~~Execution_state~~ 
+- memory = CFGmanager.processingblock.machine_state.memory
+- stack = CFGmanager.processingblock.machine_state.stack
+- storage = CFGmanager.processingblock.machine_state.storage
+- pc = CFGmanager.processingblock.machine_state.pc
+- code = CFGmanager.processingblock.machine_state.execution_environment.code
+- execution_environment = CFGmanager.processingblock.machine_state.execution_environment
+
+
+
+##### 機能
+- 新しい
+
+### Machine_state
 denoted µ, generated for each execution and a snapshot of this is stored in each CFG block.  
 For convinience of analysis, containing Stack
 - pc
@@ -72,11 +79,18 @@ For convinience of analysis, containing Stack
 - ~~i (memsize?)~~
 
 ### CFG_manager
-
-- list of blocks
+##### データ
 - edges  
 indexed by block number, and contains the list of destinations [[dest_of_block_0_0,dest_of_block_0_1,,,].[dest_of_block_1_0,,,]]
-- CFG_name
+- list of blocks
+- num_block = len(list of blocks)  
+新しいブロックを生成する際に割り振る番号として利用
+
+- processing_block
+- call_stack
+
+##### 機能
+- 
 
 ## contract
 ### Execution_environment
@@ -103,96 +117,3 @@ this will be used to receive data
 
 
 
-# Consideration of using symbolic variables as memory indexes
-## Consideration of loading and storing using symbolic variables as memory indexes
-if
-    mem = [3,0,0,,,,]
-    mem[Extract(7, 0, x)] = 6
-    mem[Extract(15, 8, x)] = 0
-    ...
-    mem[Extract(255, 248, x)] = 0
-→
-    Or(
-    (Extract(7, 0, x) == 0 => 3==6),
-    (Extract(7, 0, x) == 1 => 0==6),,,
-    )
-→ Extract(7, 0, x) != 0 and Extract(7, 0, x) != 1
-→bad
-
-if
-    mem = [3,6,8,4,0,0,0,0,,,,]
-    mem[Extract(7, 0, x)] = Extract(7, 0, y)
-    mem[Extract(15, 8, x)] = Extract(15, 8, y)
-    ...
-    mem[Extract(255, 248, x)] = Extract(255, 248, y)
-→
-    Or(
-        And(
-            (Extract(7, 0, x)==0 => Extract(7, 0, y)==3),
-            (Extract(7, 0, x)==1 => Extract(7, 0, y)==6),,,
-        ),
-        And(
-            (Extract(7, 0, x)==1 => Extract(7, 0, y)==6),
-        )
-    )
-
-→
-    Or(
-        And(
-        (x == 0 => y == Concat(mem[8-1,0-1,-1])),
-        (x == 1 => y == Concat(mem[8+1-1,0+1-1,-1])),,,
-        (x == i => y == Concat(mem[8+i-1,i-1,-1])
-        )
-    )
-→
-    Or(
-        And(
-        for i in range(memsize()-8):
-            (x == i => y == Concat(mem[i+7,i-1,-1]) #from i+7 to i
-        )
-    )
-
-
-
-
-
-
-if
-    mem[Extract(7, 0, x)] = Extract(7, 0, y)
-    mem[Extract(15, 8, x)] = Extract(15, 8, y)
-    ...
-    mem[Extract(255, 248, x)] = Extract(255, 248, y)
-
-    mem[Extract(7, 0, v)] = Extract(7, 0, w)
-    mem[Extract(15, 8, v)] = Extract(15, 8, w)
-    ...
-    mem[Extract(255, 248, v)] = Extract(255, 248, w)
-→
-    Or(
-        (x!=v => y!=w),
-        (Extract(255, 248, x)==Extract(7, 0, v) => Extract(255, 248, y)==Extract(7, 0, w)),
-        And(
-            Extract(255, 248, x)==Extract(15, 8, v),
-            Extract(247, 240, x)==Extract(7, 0, v)
-        ) => And(
-            Extract(255, 248, y)==Extract(15, 8, w),
-            Extract(247, 240, y)==Extract(7, 0, w)
-        ),,,
-        x==v => y==w,,,
-        Extract(7, 0, x)==Extract(255, 248, v) => Extract(7, 0, y)==Extract(255, 248, w)
-            
-    )
-
-
-
-## Consideration on Memory Size Calculation Using Symbolic Variable as Memory Index
-1. the case a symbolic variable is used as index.
-If the number of immediate values is 30 and the symbolic variable is x,
-it is divided into two cases where x is less than 30 and 30 or more.
-But the symbolic variable x contains both cases.
-Therefore, the memory size can be x.
-1. the case two symbolic variables are used as index.
-If the symbolic variables are x and y, 
-it is divided into two cases where x is less than y and y or more.
-However, if memory size is x, a case where x is less than y is truncated.
-So the memory size cannot be decided. However, there may be a proposal to return multiple values as memory size candidates.

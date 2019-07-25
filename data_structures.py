@@ -266,7 +266,7 @@ class BasicBlock:
 
 
 
-class CfgManager:
+class CFGmanager:
     def __init__(self, eenum:int):
         self.__eenum = eenum
         self.__basic_blocks = []

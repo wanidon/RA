@@ -1,4 +1,4 @@
-from data_structures import Stack, Memory, Storage, Returndata, Execution_environment, System_state, Machine_state, CfgManager, BasicBlock
+from data_structures import Stack, Memory, Storage, Returndata, Execution_environment, System_state, Machine_state, CFGmanager, BasicBlock
 from web3 import Web3
 
 
@@ -11,7 +11,7 @@ class VM():
         self.__σ = system_state
         self.I = Execution_environment
         self.__µ = Machine_state()
-        self.CFG_manager = CfgManager()
+        self.CFG_manager = CFGmanager()
 
         self.__tmp_block = BasicBlock()
         self.__call_stack = [] # list of (I,next_pc)
