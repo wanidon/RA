@@ -7,6 +7,7 @@
 Unlimited byte array similar to  memory. When the size of return value is fixed, it looks like the stack is being used as a place to store the return value.
 ### Calldata
 ### Basic_block
+##### フィールド
 Each CFG node holds its own Execution_state at the end of its symbolic execution.
 - account_number
 - block_number
@@ -24,7 +25,8 @@ condition for JUMPI
 - call_stack
 - dfs_stack
 - CFG_name
-
+##### メソッド
+- duplicate
 ## execution of this tool
 ### System_state
 denoted σ, generated once, ~~the mapping between account_address -> Account~~
@@ -66,7 +68,8 @@ mutable?
 
 
 ##### 機能
-- 新しい
+- expand_block
+    
 
 ### Machine_state
 denoted µ, generated for each execution and a snapshot of this is stored in each CFG block.  
