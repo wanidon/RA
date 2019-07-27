@@ -249,7 +249,16 @@ class Machine_state:
         # self.calldata = calldata
 
 class BasicBlock:
-    def __init__(self, account_number : int, block_number: int, execution_state: Machine_state=None, storage:Storage=None, mnemonics:list=None, cond_exps_to_reach_this: list=None, cond_exp_for_JUMPI:bool = False, ):
+    def __init__(self,
+                 account_number : int,
+                 block_number: int,
+                 execution_state: Machine_state=None,
+                 storage:Storage=None,
+                 mnemonics:list=None,
+                 cond_exps_to_reach_this: list=None,
+                 cond_exp_for_JUMPI:bool = False,
+                 dfs_stack = [],
+                 call_stack = []):
         self.__account_number = account_number
         self.__block_number = block_number
         self.__execution_state = Machine_state() if execution_state is None else execution_state
@@ -257,6 +266,8 @@ class BasicBlock:
         self.__mnemonics = [] if mnemonics is None else mnemonics
         self.__path_conditions = [True] if cond_exps_to_reach_this is None else cond_exps_to_reach_this
         self.__cond_exp_for_JUMPI = cond_exp_for_JUMPI
+        self.__dfs_stack =
+        self.__call_stack = []
 
     def add_mnemonic(self, numbyte: int, mnemonic: str):
         self.mnemonics.append((numbyte, mnemonic))
