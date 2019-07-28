@@ -259,6 +259,7 @@ class BasicBlock:
                  cond_exp_for_JUMPI:bool = False,
                  dfs_stack = [],
                  call_stack = []):
+
         self.__account_number = account_number
         self.__block_number = block_number
         self.__execution_state = Machine_state() if execution_state is None else execution_state
