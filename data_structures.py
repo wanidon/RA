@@ -1,7 +1,7 @@
 # coding:utf-8
 from collections import deque
 from copy import deepcopy
-from z3 import BitVecRef, BitVecNumRef, Concat, Extract, simplify
+from z3 import And, Not, BitVecRef, BitVecNumRef, Concat, Extract, simplify
 from utils import BitVec256, BitVecVal256, zero8bit, checkBitVecRef256
 from exceptions import DevelopmentErorr
 from collections import defaultdict
@@ -11,16 +11,13 @@ WORDBYTESIZE = WORDBITSIZE // 8
 
 
 class Stack:
-    # def __init__(self, blockNumber=0, stdata=deque(), numStackVar=0):
-    # def __init__(self, blockNumber=0, stdata_and_numStackVar=(deque(), 0)):
-    # TODO refacturing field name
-    def __init__(self, block_number=0, stdata=deque(), num_stack_var=0):
+
+    def __init__(self, block_number=0, stdata=None, num_stack_var=0):
         # blockNumber will be VM object's member
         self.__blockNumber = block_number
-        self.__stackdata = stdata
+        self.__stackdata = deque() if stdata is None else stdata
         self.__numStackVar = num_stack_var
-
-    size = lambda self: len(self.__stackdata)
+        self.__size = lambda: len(self.__stackdata)
 
     def duplicate(self, new_block_number:int):
         return Stack(new_block_number, deepcopy(self.__stackdata), self.__numStackVar)
@@ -30,14 +27,14 @@ class Stack:
         return BitVec256('stackVar{}-{}'.format(self.__blockNumber, self.__numStackVar))
 
     def push(self, w:BitVecRef):
-        if self.size() < 1023:
+        if self.__size() < 1023:
             self.__stackdata.append(checkBitVecRef256(w))
         else:
             # TODO stack limit reached 1024
             pass
 
     def pop(self) -> BitVecRef:
-        if self.size() >= 1:
+        if self.__size() >= 1:
             return checkBitVecRef256(self.__stackdata.pop())
         else:
             # generate a symbolic variable
@@ -48,37 +45,40 @@ class Stack:
         if x < 1 or 16 < x:
             raise DevelopmentErorr()
 
-        if x + 1 > self.size():
-            for _ in range(x + 1 - self.size()):
+        if x + 1 > self.__size():
+            for _ in range(x + 1 - self.__size()):
                 self.__stackdata.appendleft(self.generateStackVar())
 
-        a = self.__stackdata[self.size() - 1]
-        self.__stackdata[self.size() - 1] = self.__stackdata[self.size() - 1 - x]
-        self.__stackdata[self.size() - 1 - x] = a
+        a = self.__stackdata[self.__size() - 1]
+        self.__stackdata[self.__size() - 1] = self.__stackdata[self.__size() - 1 - x]
+        self.__stackdata[self.__size() - 1 - x] = a
 
     def dupx(self, x:int):
         if x < 1 or 16 < x:
             raise DevelopmentErorr()
 
-        if x > self.size():
-            for _ in range(x - self.size()):
+        if x > self.__size():
+            for _ in range(x - self.__size()):
                 self.__stackdata.appendleft(self.generateStackVar())
 
-        self.__stackdata.append(self.__stackdata[self.size() - x])
+        self.__stackdata.append(self.__stackdata[self.__size() - x])
 
     def show_data(self):
-        for i in range(self.size())[::-1]:
+        for i in range(self.__size())[::-1]:
             print("{}:{}".format(i, self.__stackdata[i]))
 
 
 class Memory:
     # big-endian
-    def __init__(self, block_number=0, num_mmory_var=0, immediate_data=[]):
+    def __init__(self, block_number=0, immediate_data=None, num_memory_var=0):
         # blockNumber will be VM object's member
         self.__blockNumber = block_number
-        self.__immediate_data = immediate_data
+        self.__immediate_data = [] if immediate_data is None else immediate_data
         self.__size = lambda: len(self.__immediate_data)
         self.__numMemoryVar = num_memory_var
+
+    def duplicate(self, new_block_number:int):
+        return Memory(new_block_number, deepcopy(self.__immediate_data), self.__numMemoryVar)
 
     def __generateMemoryVar(self):
         self.__numMemoryVar += 1
@@ -144,17 +144,14 @@ class Memory:
     def msize(self):
         return self.__size()
 
-    def duplicate(self, block_number):
-        return Memory(block_number, deepcopy(self.__numMemoryVar), deepcopy(self.__immediate_data))
-
     def show_data(self):
         print(self.__immediate_data)
 
 
 class Storage:
-    def __init__(self, block_number=0, storage_data={}, num_storage_var=0):
+    def __init__(self, block_number=0, storage_data=None, num_storage_var=0):
         self.__block_number = block_number
-        self.__storage_data = storage_data
+        self.__storage_data = {} if storage_data is None else storage_data
         self.__num_storage_var = num_storage_var
 
     def __generate_storage_var(self):
@@ -181,8 +178,8 @@ class Storage:
         #     key = str(key)
         self.__storage_data[str(key)] = value
 
-    def duplicate(self, block_number):
-        return Storage(block_number, deepcopy(self.__storage_data), self.__num_storage_var)
+    def duplicate(self, new_block_number):
+        return Storage(new_block_number, deepcopy(self.__storage_data), self.__num_storage_var)
 
     def show_data(self):
         for k,v in self.__storage_data.items():
@@ -197,10 +194,11 @@ class Calldata:
     pass
 
 
-class System_state:
+class WorldState:
     def __init__(self):
         self.execution_environments = []
         self.block_hashes = {}
+        self.accounts = {}
 
     # def generate_execution_environment(self):
     #     pass
@@ -226,10 +224,10 @@ class Execution_environment:
         self.msg_value = Iv
         self.this_code = Ib
         self.block_header = IH
-        self.accounts = []
+        #self.accounts = []
 
-    def add_account(self,code: str):
-        self.accounts.append(Account())
+    # def add_account(self,code: str):
+    #     self.accounts.append(Account())
 
 
 class Machine_state:
@@ -237,46 +235,125 @@ class Machine_state:
         pc=0,
         memory=Memory(),
         stack=Stack(),
-        # storage=Storage(),
+        storage=Storage(),
         #returndata=Returndata(),
         #calldata=Calldata()
         ):
-        self.pc = pc
-        self.memory = memory
-        self.stack = stack
-        # self.storage = storage
+        self.__pc = pc
+        self.__memory = memory
+        self.__stack = stack
+        self.__storage = storage
         # self.returndata = returndata
         # self.calldata = calldata
+
+    def duplicate(self, new_block_number):
+        return Machine_state(
+            self.__pc,
+            self.__memory.duplicate(new_block_number),
+            self.__stack.duplicate(new_block_number),
+            self.__storage.duplicate(new_block_number)
+        )
+
+    def get_pc(self):
+        return self.__pc
+
+    def set_pc(self, pc:int):
+        self.__pc = pc
+
+    def get_memory(self):
+        return self.__memory
+
+    def get_stack(self):
+        return self.__stack
+
+    def get_storage(self):
+        return self.__storage
+
+# for type annotation in methods of BasicBlock
+class BasicBlock:
+    pass
 
 class BasicBlock:
     def __init__(self,
                  account_number : int,
                  block_number: int,
-                 execution_state: Machine_state=None,
-                 storage:Storage=None,
-                 mnemonics:list=None,
-                 cond_exps_to_reach_this: list=None,
-                 cond_exp_for_JUMPI:bool = False,
-                 dfs_stack = [],
-                 call_stack = []):
+                 machine_state: Machine_state=None,
+                 storage: Storage=None,
+                 mnemonics: list = None,
+                 path_condition=True,
+                 cond_exp_for_JUMP=False,
+                 dfs_stack=None,
+                 call_stack=None):
 
         self.__account_number = account_number
         self.__block_number = block_number
-        self.__execution_state = Machine_state() if execution_state is None else execution_state
-        self.__storage =  Storage() if storage is None else storage
+        self.__machine_state = Machine_state() if machine_state is None else machine_state
+        self.__storage = Storage() if storage is None else storage
         self.__mnemonics = [] if mnemonics is None else mnemonics
-        self.__path_conditions = [True] if cond_exps_to_reach_this is None else cond_exps_to_reach_this
-        self.__cond_exp_for_JUMPI = cond_exp_for_JUMPI
-        self.__dfs_stack =
-        self.__call_stack = []
+        self.__path_condition = path_condition
+        self.__cond_exp_for_JUMP = cond_exp_for_JUMP
+        self.dfs_stack = [] if dfs_stack is None else dfs_stack
+        self.call_stack = [] if call_stack is None else call_stack
 
-    def add_mnemonic(self, numbyte: int, mnemonic: str):
-        self.mnemonics.append((numbyte, mnemonic))
+    def add_mnemonic(self, numaddedbyte: int, mnemonic: str):
+
+        self.__mnemonics.append((self.__machine_state.get_pc(), mnemonic))
+        self.__machine_state.set_pc(self.__machine_state.get_pc() + numaddedbyte)
 
     def get_mnemonic(self):
-        return self.mnemonics
+        return self.__mnemonics
 
+    def duplicate(self, account_number:int, new_block_number:int):
+        return BasicBlock(account_number, new_block_number,
+                          self.__machine_state.duplicate(new_block_number),
+                          self.__storage.duplicate(new_block_number),
+                          deepcopy(self.__mnemonics),
+                          deepcopy(self.__path_condition),
+                          deepcopy(self.__cond_exp_for_JUMP),
+                          deepcopy(self.dfs_stack),
+                          deepcopy(self.call_stack)
+                          )
 
+    def push_dfs_stack(self, block:BasicBlock):
+        self.dfs_stack.append(block)
+
+    def pop_dfs_stack(self):
+        self.dfs_stack.pop()
+
+    def show_dfs_stack(self):
+        print(self.dfs_stack)
+
+    def push_call_stack(self, block:BasicBlock):
+        self.call_stack.append(block)
+
+    def pop_call_stack(self):
+        self.call_stack.pop()
+
+    def show_call_stack(self):
+        print(self.call_stack)
+
+    def set_pc(self, pc):
+        self.__machine_state.set_pc(pc)
+
+    # TODO
+    # VMが持つデータを取り出す(pc以外は参照として)
+    def extract_data(self):
+        return self.__machine_state.get_memory(),\
+               self.__machine_state.get_stack(),\
+               self.__storage,\
+               self.__machine_state.get_pc()
+
+    def add_constraint_to_path_condition(self, constraint):
+        self.__path_condition = simplify(And(self.__path_condition, constraint))
+
+    def get_path_condition(self):
+        return self.__path_condition
+
+    def set_cond_exp_for_JUMP(self, constraint):
+        self.__cond_exp_for_JUMP = constraint
+
+    def get_cond_exp_for_JUMP(self):
+        return self.__cond_exp_for_JUMP
 
 class CFGmanager:
     def __init__(self, eenum:int):

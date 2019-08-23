@@ -17,12 +17,9 @@ print(cut, cut.size())
 
 m1.mstore8(BitVecVal256(0x40),BitVecVal256(0xff))
 print(hex(m1.mload(BitVecVal256(0x40)).as_long()))
-
-
-
 m1.show_data()
 
 m2 = m1.duplicate(1)
 m2.show_data()
-m2.mstore8(BitVecVal256(0x71),BitVecVal256(0xfd))
+m2.mstore8(BitVecVal256(0x71), BitVecVal256(0xfd))
 m2.show_data()

@@ -1,12 +1,12 @@
-from data_structures import Stack, Memory, Storage, Returndata, Execution_environment, System_state, Machine_state, CFGmanager, BasicBlock
+from data_structures import Stack, Memory, Storage, Returndata, Execution_environment, WorldState, Machine_state, CFGmanager, BasicBlock
 from web3 import Web3
 
 
 class VM():
     def __init__(self,
-    system_state: System_state,
-    exe_env: Execution_environment
-    ):
+                 system_state: WorldState,
+                 exe_env: Execution_environment
+                 ):
 
         self.__σ = system_state
         self.I = Execution_environment

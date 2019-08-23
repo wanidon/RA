@@ -62,8 +62,8 @@ mutable?
 - stack = CFGmanager.processingblock.machine_state.stack
 - storage = CFGmanager.processingblock.machine_state.storage
 - pc = CFGmanager.processingblock.machine_state.pc
-- code = CFGmanager.processingblock.machine_state.execution_environment.code
-- execution_environment = CFGmanager.processingblock.machine_state.execution_environment
+- code = CFGmanager.execution_environment.code
+- execution_environment = CFGmanager.execution_environment
 
 
 
