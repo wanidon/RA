@@ -1,18 +1,27 @@
 #coding:utf-8
 from data_structures import WorldState
-if __name__ == 'main':
+from vm import VM
+
+if __name__ == '__main__':
+
+    world_state = WorldState()
+
     # 主たるコントラクトのコードを標準入力から受け取る
-    code_primaly = '0123456789'
-    primalies = [code_primaly]
-    # 従たるコントラクトのコード
-    code_secoundaly = 'abcdef'
-    secoundalies = [code_secoundaly]
+    code_primaly = '6001600201' # + 1 2
+    primaly_contracts = [world_state.add_account(code_primaly)]
 
+    print(primaly_contracts)
 
-    #system_state作成
-    system_state = WorldState()
-    while primalies:
-        p = code_primaly.pop()
+    # # 従たるコントラクトのコード
+    # secondaly_contracts = []
+    # with open(0,'r') as f:
+    #     for line in f.readlines():
+    #         secondaly_contracts.append(world_state.add_account(line.rstrip()))
+
+    vm = VM(world_state)
+    for addr in primaly_contracts:
+        vm.init_state(addr)
+
 
 
 

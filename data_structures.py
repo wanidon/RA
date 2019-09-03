@@ -1,4 +1,6 @@
+#! /usr/bin/env/ python3
 # coding:utf-8
+
 from collections import deque
 from copy import deepcopy
 from z3 import And, Not, BitVecRef, BitVecNumRef, Concat, Extract, simplify
@@ -200,6 +202,22 @@ class WorldState:
         self.block_hashes = {}
         self.accounts = {}
 
+    def add_account(self, bytecode:str):
+        # アカウント番号とAccount address生成
+        new_num = len(self.accounts)
+        new_addr = BitVec256('address{}'.format(new_num))
+
+        # Account生成
+        account = Account(bytecode,new_num)
+
+        # アドレスとAccountインスタンスの対応をaccountsに保存
+        self.accounts[new_addr] = account
+
+        return new_addr
+
+    def get_account_num(self, addr:BitVecRef) -> int:
+        return self.accounts[addr].get_account_num()
+
     # def generate_execution_environment(self):
     #     pass
     '''
@@ -215,19 +233,28 @@ class WorldState:
 
 
 class Execution_environment:
-    def __init__(self, eenum:int, Ia:BitVec256, Ip:BitVec256, Id:BitVec256, Is:BitVec256, Iv:BitVec256, Ib:BitVec256, IH:dict):
-        self.eenum = eenum
+    def __init__(self, exec_env_num:int, Ia:BitVecRef, Io:BitVecRef, Ip:BitVecRef, Id:BitVecRef, Is:BitVecRef, Iv:BitVecRef, Ib:BitVecRef, IH:dict, Ie:int, Iw:bool):
+        self.exec_env_num = exec_env_num
         self.this_address = Ia
+        self.tx_originator = Io
         self.gasprice = Ip
         self.msg_data = Id
-        self.msg_caller = Is
+        self.msg_sender = Is
         self.msg_value = Iv
         self.this_code = Ib
         self.block_header = IH
+        self.depth_of_call = Ie
+        self.permission_to_change_state = Iw
         #self.accounts = []
-
+    # about Iw: https://ethereum.stackexchange.com/questions/49210/execution-environment-variables-iw-and-ie
     # def add_account(self,code: str):
     #     self.accounts.append(Account())
+
+
+    def show_all(self):
+        print(self.exec_env_num,self.this_address,self.tx_originator,self.gasprice,
+              self.msg_data,self.msg_sender,self.msg_value,self.this_code,self.block_header,
+              self.depth_of_call,self.permission_to_change_state)
 
 
 class Machine_state:
@@ -239,10 +266,10 @@ class Machine_state:
         #returndata=Returndata(),
         #calldata=Calldata()
         ):
-        self.__pc = pc
-        self.__memory = memory
-        self.__stack = stack
-        self.__storage = storage
+        self.pc = pc
+        self.memory = memory
+        self.stack = stack
+        self.storage = storage
         # self.returndata = returndata
         # self.calldata = calldata
 
@@ -355,13 +382,13 @@ class BasicBlock:
     def get_cond_exp_for_JUMP(self):
         return self.__cond_exp_for_JUMP
 
-class CFGmanager:
-    def __init__(self, eenum:int):
-        self.__eenum = eenum
+class CfgManager:
+    def __init__(self, cfg_num:int):
+        self.cfg_num = cfg_num
         self.__basic_blocks = []
         self.__visited_blocks = []
-        self.__edges = defaultdict([])
-        self.__CFG_name = "CFG_{}".format(self.eenum)
+        self.__edges = defaultdict(list)
+        self.__CFG_name = "CFG_{}".format(self.cfg_num)
 
     def add_basic_block(self, basic_block : BasicBlock):
         self.__basic_blocks.append(basic_block)
@@ -384,12 +411,16 @@ class CFGmanager:
     def get_CFG_name(self):
         return self.__CFG_name
 
+
 class Account:
-    def __init__(self, code: str, account_num: int):
-        self.code = code
-        self.codesize = lambda:len(code)
+    def __init__(self, bytecode: str, account_num: int, balance:BitVecRef = None):
+        self.bytecode = bytecode
+        self.codesize = lambda:len(bytecode)
         self.account_num = account_num
-        self.balance = BitVec256('account_balance_{}'.format(self.account_num))
+        self.balance = BitVec256('account_balance_{}'.format(self.account_num)) if balance is None else balance
+
+    def get_account_num(self) -> int:
+        return self.account_num
 
 
 

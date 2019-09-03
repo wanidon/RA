@@ -27,5 +27,10 @@ def test_checkBitVecRef256():
     #print(isBitVecRef256(34))a
     print(checkBitVecRef256(BitVec('y',128)))
     print('hoge')
+
+
+DEBUG = True
+def pdbg(*somthing):
+    if DEBUG: print(*somthing)
 if __name__ == '__main__':
     test_checkBitVecRef256()
