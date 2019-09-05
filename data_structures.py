@@ -263,8 +263,8 @@ class Machine_state:
         memory=Memory(),
         stack=Stack(),
         storage=Storage(),
-        #returndata=Returndata(),
-        #calldata=Calldata()
+        # returndata=Returndata(),
+        # calldata=Calldata()
         ):
         self.pc = pc
         self.memory = memory
@@ -275,26 +275,26 @@ class Machine_state:
 
     def duplicate(self, new_block_number):
         return Machine_state(
-            self.__pc,
-            self.__memory.duplicate(new_block_number),
-            self.__stack.duplicate(new_block_number),
-            self.__storage.duplicate(new_block_number)
+            self.pc,
+            self.memory.duplicate(new_block_number),
+            self.stack.duplicate(new_block_number),
+            self.storage.duplicate(new_block_number)
         )
 
     def get_pc(self):
-        return self.__pc
+        return self.pc
 
-    def set_pc(self, pc:int):
-        self.__pc = pc
+    def set_pc(self, pc: int):
+        self.pc = pc
 
     def get_memory(self):
-        return self.__memory
+        return self.memory
 
     def get_stack(self):
-        return self.__stack
+        return self.stack
 
     def get_storage(self):
-        return self.__storage
+        return self.storage
 
 # for type annotation in methods of BasicBlock
 class BasicBlock:
@@ -302,44 +302,64 @@ class BasicBlock:
 
 class BasicBlock:
     def __init__(self,
-                 account_number : int,
+                 account_number: int, # どのコントラクトのブロックか
                  block_number: int,
-                 machine_state: Machine_state=None,
-                 storage: Storage=None,
+                 machine_state: Machine_state = None,
+                 storage: Storage = None,
                  mnemonics: list = None,
-                 path_condition=True,
-                 cond_exp_for_JUMP=False,
+                 path_condition = True,
+                 cond_exp_for_JUMP = False,
                  dfs_stack=None,
-                 call_stack=None):
+                 call_stack=None,
+                 jumpdest=-1):
 
         self.__account_number = account_number
         self.__block_number = block_number
         self.__machine_state = Machine_state() if machine_state is None else machine_state
         self.__storage = Storage() if storage is None else storage
-        self.__mnemonics = [] if mnemonics is None else mnemonics
-        self.__path_condition = path_condition
-        self.__cond_exp_for_JUMP = cond_exp_for_JUMP
+        self.mnemonics = [] if mnemonics is None else mnemonics
+        self.path_condition = path_condition
+        self.cond_exp_for_JUMP = cond_exp_for_JUMP
         self.dfs_stack = [] if dfs_stack is None else dfs_stack
         self.call_stack = [] if call_stack is None else call_stack
+        self.jumpdest = jumpdest
+
+    def get_block_number(self):
+        return self.__block_number
 
     def add_mnemonic(self, numaddedbyte: int, mnemonic: str):
 
-        self.__mnemonics.append((self.__machine_state.get_pc(), mnemonic))
+        self.mnemonics.append((self.__machine_state.get_pc(), mnemonic))
         self.__machine_state.set_pc(self.__machine_state.get_pc() + numaddedbyte)
 
-    def get_mnemonic(self):
-        return self.__mnemonics
+    def get_mnemonic_as_str(self):
+        retstr = ''
+        for i,op  in self.mnemonics:
+            retstr += '{0:04x} '.format(i) + op + '\n'
+        return retstr
 
     def duplicate(self, account_number:int, new_block_number:int):
         return BasicBlock(account_number, new_block_number,
                           self.__machine_state.duplicate(new_block_number),
                           self.__storage.duplicate(new_block_number),
-                          deepcopy(self.__mnemonics),
-                          deepcopy(self.__path_condition),
-                          deepcopy(self.__cond_exp_for_JUMP),
+                          deepcopy(self.mnemonics),
+                          deepcopy(self.path_condition),
+                          deepcopy(self.cond_exp_for_JUMP),
                           deepcopy(self.dfs_stack),
-                          deepcopy(self.call_stack)
+                          deepcopy(self.call_stack),
+                          self.get_jumpdest()
                           )
+
+    def inherit(self, new_block_number: int, jflag: bool = False):
+        block = self.duplicate(self.__account_number,new_block_number)
+        if not jflag:
+            block.set_pc(block.get_jumpdest())
+        block.clean_mnemonics()
+        return block
+
+    def clean_mnemonics(self):
+        self.mnemonics = []
+        self.set_jumpdest(-1)
 
     def push_dfs_stack(self, block:BasicBlock):
         self.dfs_stack.append(block)
@@ -361,7 +381,10 @@ class BasicBlock:
 
     def set_pc(self, pc):
         self.__machine_state.set_pc(pc)
-
+    def set_jumpdest(self,dest):
+        self.jumpdest = dest
+    def get_jumpdest(self):
+        return self.jumpdest
     # TODO
     # VMが持つデータを取り出す(pc以外は参照として)
     def extract_data(self):
@@ -371,16 +394,17 @@ class BasicBlock:
                self.__machine_state.get_pc()
 
     def add_constraint_to_path_condition(self, constraint):
-        self.__path_condition = simplify(And(self.__path_condition, constraint))
+        self.path_condition = simplify(And(self.path_condition, constraint))
 
     def get_path_condition(self):
-        return self.__path_condition
+        return self.path_condition
 
     def set_cond_exp_for_JUMP(self, constraint):
-        self.__cond_exp_for_JUMP = constraint
+        self.cond_exp_for_JUMP = constraint
 
     def get_cond_exp_for_JUMP(self):
-        return self.__cond_exp_for_JUMP
+        return self.cond_exp_for_JUMP
+
 
 class CfgManager:
     def __init__(self, cfg_num:int):
@@ -405,11 +429,50 @@ class CfgManager:
     def add_edge(self, origin: BasicBlock, dest: BasicBlock):
         self.__edges[origin].append(dest)
 
-    def get_dest_block(self, origin: BasicBlock):
+    def get_dest_blocks(self, origin: BasicBlock):
         return self.__edges[origin]
 
     def get_CFG_name(self):
         return self.__CFG_name
+
+    def extract_mnemonics(self, block: BasicBlock):
+        # TODO dotファイルとして出力できるように変更
+        node = block.get_block_number()
+        nodes = set()
+        nodes.add(node)
+        mnemonics = {node:str(block.get_mnemonic_as_str())}
+        jumpdests = {node:block.get_jumpdest()}
+        edges = ''
+        dests = self.get_dest_blocks(block)
+        for d in dests:
+            dn = d.get_block_number()
+            nodes.add(dn)
+            edges += 'block' + str(node) + ' -> ' + 'block' + str(dn) + '\n'
+            m, e, n, j= self.extract_mnemonics(d)
+            mnemonics.update(m)
+            edges += e
+            nodes |= n
+            jumpdests.update(j)
+
+        return (mnemonics,edges,nodes,jumpdests)
+
+    def gen_CFG(self):
+        root = self.__basic_blocks[0]
+        mnemonics,edges,nodes,jumpdests = self.extract_mnemonics(root)
+        nodedefine = ''
+        for n in nodes:
+            nodedefine += 'block' + str(n) + '[shape=box,label = "'
+            nodedefine += mnemonics[n]
+            if jumpdests[n] != -1:
+                nodedefine += 'jumpdest: {0:04x}\n'.format(jumpdests[n])
+            nodedefine += '"];\n'
+
+        cfg = 'digraph ' + self.get_CFG_name() + ' {\n'
+        cfg += nodedefine
+        cfg += edges
+        cfg += '}'
+
+        return (self.get_CFG_name(),cfg)
 
 
 class Account:
