@@ -3,10 +3,11 @@
 
 from collections import deque
 from copy import deepcopy
-from z3 import And, Not, BitVecRef, BitVecNumRef, Concat, Extract, simplify
+from z3 import And, Or, Not, BitVecRef, BitVecNumRef, BoolRef, BitVec, BitVecVal, Concat, Extract, simplify, Int, Solver, unsat, sat, ZeroExt
 from utils import BitVec256, BitVecVal256, zero8bit, checkBitVecRef256
-from exceptions import DevelopmentErorr
+from exceptions import DevelopmentErorr, SettingError
 from collections import defaultdict
+from random import random
 
 WORDBITSIZE = 256
 WORDBYTESIZE = WORDBITSIZE // 8
@@ -19,7 +20,6 @@ class Stack:
         self.__blockNumber = block_number
         self.__stackdata = deque() if stdata is None else stdata
         self.__numStackVar = num_stack_var
-        self.__size = lambda: len(self.__stackdata)
 
     def duplicate(self, new_block_number:int):
         return Stack(new_block_number, deepcopy(self.__stackdata), self.__numStackVar)
@@ -29,44 +29,50 @@ class Stack:
         return BitVec256('stackVar{}-{}'.format(self.__blockNumber, self.__numStackVar))
 
     def push(self, w:BitVecRef):
-        if self.__size() < 1023:
+        if len(self.__stackdata) < 1023:
+            print('push',w,'stack id = ',id(self))
             self.__stackdata.append(checkBitVecRef256(w))
+            # self.__stackdata.append(w)
         else:
             # TODO stack limit reached 1024
             pass
 
     def pop(self) -> BitVecRef:
-        if self.__size() >= 1:
+        if len(self.__stackdata) >= 1:
             return checkBitVecRef256(self.__stackdata.pop())
         else:
             # generate a symbolic variable
             # TODO this may cause stack underflow
             return self.generateStackVar()
 
-    def swapx(self, x:int):
-        if x < 1 or 16 < x:
-            raise DevelopmentErorr()
+    def get_stack_size(self) -> int:
+        return len(self.__stackdata)
 
-        if x + 1 > self.__size():
-            for _ in range(x + 1 - self.__size()):
-                self.__stackdata.appendleft(self.generateStackVar())
+    # def swapx(self, x:int):
+    #     if x < 1 or 16 < x:
+    #         raise DevelopmentErorr()
+    #
+    #     if x + 1 > self.__size():
+    #         for _ in range(x + 1 - self.__size()):
+    #             self.__stackdata.appendleft(self.generateStackVar())
+    #
+    #     a = self.__stackdata[self.__size() - 1]
+    #     self.__stackdata[self.__size() - 1] = self.__stackdata[self.__size() - 1 - x]
+    #     self.__stackdata[self.__size() - 1 - x] = a
 
-        a = self.__stackdata[self.__size() - 1]
-        self.__stackdata[self.__size() - 1] = self.__stackdata[self.__size() - 1 - x]
-        self.__stackdata[self.__size() - 1 - x] = a
-
-    def dupx(self, x:int):
-        if x < 1 or 16 < x:
-            raise DevelopmentErorr()
-
-        if x > self.__size():
-            for _ in range(x - self.__size()):
-                self.__stackdata.appendleft(self.generateStackVar())
-
-        self.__stackdata.append(self.__stackdata[self.__size() - x])
+    # def dupx(self, x:int):
+    #     if x < 1 or 16 < x:
+    #         raise DevelopmentErorr()
+    #
+    #     if x > self.__size():
+    #         for _ in range(x - self.__size()):
+    #             self.__stackdata.appendleft(self.generateStackVar())
+    #
+    #     self.__stackdata.append(deepcopy(self.__stackdata[self.__size() - x]))
 
     def show_data(self):
-        for i in range(self.__size())[::-1]:
+        print('stack_id',id(self),len(self.__stackdata))
+        for i in range(len(self.__stackdata))[::-1]:
             print("{}:{}".format(i, self.__stackdata[i]))
 
 
@@ -76,10 +82,11 @@ class Memory:
         # blockNumber will be VM object's member
         self.__blockNumber = block_number
         self.__immediate_data = [] if immediate_data is None else immediate_data
-        self.__size = lambda: len(self.__immediate_data)
         self.__numMemoryVar = num_memory_var
 
-    def duplicate(self, new_block_number:int):
+    def duplicate(self, new_block_number:int=None):
+        if new_block_number is None:
+            new_block_number = self.__blockNumber
         return Memory(new_block_number, deepcopy(self.__immediate_data), self.__numMemoryVar)
 
     def __generateMemoryVar(self):
@@ -88,13 +95,13 @@ class Memory:
 
     def mstore(self, offset: BitVecNumRef, value: BitVecRef):
         if type(offset) != BitVecNumRef:
-            raise DevelopmentErorr('Does not support memory operations indexed by symbolic variables.')
+            raise DevelopmentErorr('Does not support memory operations indexed by symbol variables.')
 
         offset = checkBitVecRef256(offset).as_long()
         checkBitVecRef256(value)
 
-        if offset + WORDBYTESIZE > self.__size():
-            d = offset + WORDBYTESIZE - self.__size()
+        if offset + WORDBYTESIZE > len(self.__immediate_data):
+            d = offset + WORDBYTESIZE - len(self.__immediate_data)
             self.__immediate_data.extend([zero8bit() for _ in range(d)])
 
         #  for dict
@@ -106,28 +113,30 @@ class Memory:
             self.__immediate_data[offset + (WORDBYTESIZE - 1 - i)] = Extract(i * 8 + 7, i * 8, value)
 
     def mstore8(self, offset: BitVecNumRef, value:BitVecRef):
-        if type(offset) != BitVecNumRef:
-            raise DevelopmentErorr('Does not support memory operations indexed by symbolic variables.')
+        if isinstance(offset, BitVecNumRef):
+            offset = checkBitVecRef256(offset).as_long()
+        elif not isinstance(offset, int):
+            raise DevelopmentErorr('Does not support memory operations indexed by symbol variables.')
 
-        offset = checkBitVecRef256(offset).as_long()
-        checkBitVecRef256(value)
 
-        if offset >= self.__size():
-            d = offset - self.__size() + 1
+        #checkBitVecRef256(value)
+
+        if offset >= len(self.__immediate_data):
+            d = offset - len(self.__immediate_data) + 1
             self.__immediate_data.extend([zero8bit() for _ in range(d)])
 
         self.__immediate_data[offset] = simplify(Extract(7, 0, value))
 
     def mload(self, offset: BitVecNumRef):
         if type(checkBitVecRef256(offset)) is not BitVecNumRef:
-            raise DevelopmentErorr('Does not support memory operations indexed by symbolic variables.')
+            raise DevelopmentErorr('Does not support memory operations indexed by symbol variables.')
 
         offset = checkBitVecRef256(offset).as_long()
-        if offset + WORDBYTESIZE > self.__size():
+        if offset + WORDBYTESIZE > len(self.__immediate_data):
             # ~ index out of bounds ~
             # generate a symblolic variable
             newmemvar = self.__generateMemoryVar()
-            d = offset + WORDBYTESIZE - self.__size()
+            d = offset + WORDBYTESIZE - len(self.__immediate_data)
             if d < WORDBYTESIZE:
                 for i in range(d):
                     self.__immediate_data.append(Extract((d - i - 1) * 8 + 7, (d - i - 1) * 8, newmemvar))
@@ -136,18 +145,39 @@ class Memory:
                 self.mstore(BitVecVal256(offset), newmemvar)
                 return newmemvar
 
-        elif offset < 0:
-            # TODO  index out of bounds
-            pass
         else:
             return simplify(
                 Concat(self.__immediate_data[offset: WORDBYTESIZE+offset]))
 
-    def msize(self):
-        return self.__size()
+    def size(self):
+        return len(self.__immediate_data)
+
+    def get_one_byte(self, i: int):
+        return self.__immediate_data[i] if i < len(self.__immediate_data) else BitVecVal(0, 8)
 
     def show_data(self):
         print(self.__immediate_data)
+
+
+class MsgData(Memory):
+    # use exec_env_num instead of block number
+    def __generateMemoryVar(self):
+        self.__numMemoryVar += 1
+        return BitVec256('MsgData{}-{}'.format(self.__blockNumber, self.__numMemoryVar))
+
+    def set_function_id(self, fid:str = None):
+        if isinstance(fid, str) and len(fid) == 8:
+            fid = BitVec(int(fid, 16), 32)
+        elif isinstance(fid, int):
+            fid = BitVec(fid, 32)
+        elif fid is None:
+            fid = BitVec('function_id', 32)
+        else:
+            raise SettingError('illegal function id given')
+
+        for i in range(4):
+            fragment = Extract(i*8+7, i*8, fid)
+            self.mstore8(i, fragment)
 
 
 class Storage:
@@ -191,9 +221,33 @@ class Storage:
 # TODO return data
 class Returndata():
     pass
+
+
 # TODO call data
 class Calldata:
     pass
+
+
+class Account:
+    def __init__(self, bytecode: str,
+                 account_num: int,
+                 balance: BitVecRef = None,
+                 nonce=0):
+        self.bytecode = bytecode
+        self.codesize = lambda: len(bytecode)
+        self.account_num = account_num
+        self.__balance = BitVec256('account_balance_{}'.format(self.account_num)) if balance is None else balance
+        self.nonce = nonce
+        self.I = None
+
+    def get_account_num(self) -> int:
+        return self.account_num
+
+    def get_balance(self) -> BitVecRef:
+        return self.__balance
+
+    def get_bytecode(self) -> str:
+        return self.bytecode
 
 
 class WorldState:
@@ -202,18 +256,21 @@ class WorldState:
         self.block_hashes = {}
         self.accounts = {}
 
-    def add_account(self, bytecode:str):
+    def add_account(self, bytecode:str, addr:BitVecRef = None) -> BitVecRef:
         # アカウント番号とAccount address生成
         new_num = len(self.accounts)
-        new_addr = BitVec256('address{}'.format(new_num))
+        new_addr = ZeroExt(96,BitVec('address{}'.format(new_num), 160)) if addr is None else addr
 
         # Account生成
-        account = Account(bytecode,new_num)
+        account = Account(bytecode, new_num)
 
         # アドレスとAccountインスタンスの対応をaccountsに保存
-        self.accounts[new_addr] = account
+        self.accounts[str(new_addr)] = account
 
         return new_addr
+
+    def get_account(self, addr: BitVecRef) -> Account:
+        return self.accounts[addr]
 
     def get_account_num(self, addr:BitVecRef) -> int:
         return self.accounts[addr].get_account_num()
@@ -231,18 +288,64 @@ class WorldState:
     '''
 
 
+class BlockHeader:
+    def __init__(self,
+                 Hi:BitVecRef = None,
+                 Hp:BitVecRef = None,
+                 Hc:BitVecRef = None,
+                 Hs:BitVecRef = None,
+                 Hd:BitVecRef = None,
+                 Hl:BitVecRef = None):
+        # self.__block_id = 'tmp{}'.format(int(random()*10**6)%10**6) if Hi is None else str(Hi)
+        self.__block_number = BitVec256('blocknumber_current_block') if Hi is None else Hi
+        self.__parent_hash = BitVec256('parent_hash_'+str(self.get_block_number())) if Hp is None else Hp
+        self.__beneficiary = BitVec256('beneficiary_'+str(self.get_block_number())) if Hc is None else Hc
+        self.__timestamp = BitVec256('timestamp_'+str(self.get_block_number())) if Hs is None else Hs
+        self.__difficulty = BitVec256('difficulty_'+str(self.get_block_number())) if Hd is None else Hd
+        self.__gaslimit = BitVec256('gaslimit_'+str(self.get_block_number())) if Hl is None else Hl
 
-class Execution_environment:
-    def __init__(self, exec_env_num:int, Ia:BitVecRef, Io:BitVecRef, Ip:BitVecRef, Id:BitVecRef, Is:BitVecRef, Iv:BitVecRef, Ib:BitVecRef, IH:dict, Ie:int, Iw:bool):
-        self.exec_env_num = exec_env_num
-        self.this_address = Ia
-        self.tx_originator = Io
-        self.gasprice = Ip
-        self.msg_data = Id
-        self.msg_sender = Is
-        self.msg_value = Iv
-        self.this_code = Ib
-        self.block_header = IH
+    def get_parent_hash(self) -> BitVecRef:
+        return self.__parent_hash
+
+    def get_block_number(self) -> BitVecRef:
+        return self.__block_number
+
+    def get_beneficiary(self) -> BitVecRef:
+        return self.__beneficiary
+
+    def get_timestamp(self) -> BitVecRef:
+        return self.__timestamp
+
+    def get_difficulty(self) -> BitVecRef:
+        return self.__difficulty
+
+    def get_gaslimit(self) -> BitVecRef:
+        return self.__gaslimit
+
+
+
+class ExecutionEnvironment:
+    def __init__(self,
+                 Ib: str,
+                 Ia:BitVecRef = None,
+                 Io:BitVecRef = None,
+                 Ip:BitVecRef = None,
+                 Id:BitVecRef = None,
+                 Is:BitVecRef = None,
+                 Iv:BitVecRef = None,
+                 IH:dict = None,
+                 Ie:int = 0,
+                 Iw:bool = True):
+        self.__exec_env_id = id(self)
+        self.this_address = BitVec256('Ia_{}'.format(self.__exec_env_id)) if Ia is None else Ia
+        self.tx_originator = BitVec256('Io_{}'.format(self.__exec_env_id)) if Io is None else Io
+        self.gasprice = BitVec256('Ip_{}'.format(self.__exec_env_id)) if Ip is None else Ip
+        self.msg_data = MsgData(self.__exec_env_id) if Id is None else Id
+        self.msg_sender = BitVec256('Is_{}'.format(self.__exec_env_id)) if Is is None else Is
+        self.msg_value = BitVec256('Iv_{}'.format(self.__exec_env_id)) if Iv is None else Iv
+        # TODO
+        self.this_code = BitVec256('Ib_{}'.format(self.__exec_env_id)) if Ib is None else Ib
+        self.block_header = BlockHeader() if IH is None else IH # TODO: blockheader IH
         self.depth_of_call = Ie
         self.permission_to_change_state = Iw
         #self.accounts = []
@@ -250,31 +353,44 @@ class Execution_environment:
     # def add_account(self,code: str):
     #     self.accounts.append(Account())
 
+    def get_exec_env_id(self) -> int:
+        return self.__exec_env_id
+
+    def get_block_header(self) -> BlockHeader:
+        return self.block_header
+
+    def get_code(self) -> str:
+        return self.this_code
+
+    def get_msg_data(self) -> MsgData:
+        return self.msg_data
 
     def show_all(self):
-        print(self.exec_env_num,self.this_address,self.tx_originator,self.gasprice,
+        print(self.this_address,self.tx_originator,self.gasprice,
               self.msg_data,self.msg_sender,self.msg_value,self.this_code,self.block_header,
               self.depth_of_call,self.permission_to_change_state)
 
 
-class Machine_state:
+class MachineState:
     def __init__(self,
         pc=0,
-        memory=Memory(),
-        stack=Stack(),
-        storage=Storage(),
+        memory=None,
+        stack=None,
+        storage=None,
+        gas = None
         # returndata=Returndata(),
         # calldata=Calldata()
         ):
         self.pc = pc
-        self.memory = memory
-        self.stack = stack
-        self.storage = storage
+        self.memory = Memory() if memory is None else memory
+        self.stack = Stack() if stack is None else stack
+        self.storage = Storage() if storage is None else storage
+        self.gas = BitVec256('gas_available{}'.format(id(self))) if gas is None else gas
         # self.returndata = returndata
         # self.calldata = calldata
 
     def duplicate(self, new_block_number):
-        return Machine_state(
+        return MachineState(
             self.pc,
             self.memory.duplicate(new_block_number),
             self.stack.duplicate(new_block_number),
@@ -287,14 +403,38 @@ class Machine_state:
     def set_pc(self, pc: int):
         self.pc = pc
 
-    def get_memory(self):
+    def get_memory(self) -> Memory:
         return self.memory
 
-    def get_stack(self):
+    def get_stack(self) -> Stack:
         return self.stack
+
+    def set_memory(self, memory:Memory):
+        self.memory = memory
+
+    def set_stack(self, stack:Stack):
+        self.stack = stack
 
     def get_storage(self):
         return self.storage
+
+    def get_gas(self) -> BitVecRef:
+        return self.gas
+
+    def set_gas(self, _gas):
+        self.gas = _gas
+
+    def show_all(self):
+        print('----stack----')
+        self.stack.show_data()
+        print('----memory---')
+        self.memory.show_data()
+        print('----storage--')
+        self.storage.show_data()
+        print('----pc-------')
+        print(self.get_pc())
+        print('----gas------')
+        print(self.gas)
 
 # for type annotation in methods of BasicBlock
 class BasicBlock:
@@ -302,10 +442,10 @@ class BasicBlock:
 
 class BasicBlock:
     def __init__(self,
-                 account_number: int, # どのコントラクトのブロックか
+                 #account_number: int,  # どのコントラクトのブロックか
                  block_number: int,
-                 machine_state: Machine_state = None,
-                 storage: Storage = None,
+                 machine_state: MachineState = None,
+                 exec_env: ExecutionEnvironment = None,
                  mnemonics: list = None,
                  path_condition = True,
                  cond_exp_for_JUMP = False,
@@ -313,59 +453,76 @@ class BasicBlock:
                  call_stack=None,
                  jumpdest=-1):
 
-        self.__account_number = account_number
-        self.__block_number = block_number
-        self.__machine_state = Machine_state() if machine_state is None else machine_state
-        self.__storage = Storage() if storage is None else storage
+        #self.account_number = account_number
+        self.block_number = block_number
+        self.__machine_state = MachineState() if machine_state is None else machine_state
+        # TODO
+        #self.__exec_env = ExecutionEnvironment(account_number) if exec_env is None else exec_env
+        self.__exec_env = ExecutionEnvironment() if exec_env is None else exec_env
         self.mnemonics = [] if mnemonics is None else mnemonics
         self.path_condition = path_condition
         self.cond_exp_for_JUMP = cond_exp_for_JUMP
         self.dfs_stack = [] if dfs_stack is None else dfs_stack
         self.call_stack = [] if call_stack is None else call_stack
-        self.jumpdest = jumpdest
+        self.__jumpdest = jumpdest
+        self.jumpflag = False
 
     def get_block_number(self):
-        return self.__block_number
+        return self.block_number
 
     def add_mnemonic(self, numaddedbyte: int, mnemonic: str):
-
         self.mnemonics.append((self.__machine_state.get_pc(), mnemonic))
-        self.__machine_state.set_pc(self.__machine_state.get_pc() + numaddedbyte)
 
     def get_mnemonic_as_str(self):
         retstr = ''
         for i,op  in self.mnemonics:
-            retstr += '{0:04x} '.format(i) + op + '\n'
+            retstr += '0x{0:04x} '.format(i) + op + '\\l'
+            if op == 'STOP' or op == 'INVALID' or op == 'RETURN' or op == 'REVERT':
+                retstr += 'path condition: ' + str(simplify(self.path_condition)) + '\\n'
         return retstr
 
-    def duplicate(self, account_number:int, new_block_number:int):
-        return BasicBlock(account_number, new_block_number,
-                          self.__machine_state.duplicate(new_block_number),
-                          self.__storage.duplicate(new_block_number),
-                          deepcopy(self.mnemonics),
-                          deepcopy(self.path_condition),
-                          deepcopy(self.cond_exp_for_JUMP),
-                          deepcopy(self.dfs_stack),
-                          deepcopy(self.call_stack),
-                          self.get_jumpdest()
+    def duplicate(self,
+                  #account_number: int,
+                  new_block_number: int,
+                  machine_state:MachineState = None,
+                  exec_env:ExecutionEnvironment = None,
+                  dfs_stack = None):
+        return BasicBlock(block_number=new_block_number,
+                          machine_state=self.__machine_state.duplicate(new_block_number) if machine_state is None else machine_state,
+                          # TODO 不変なのでコピーする必要はないはず
+                          exec_env=self.__exec_env if exec_env is None else exec_env,
+                          # deepcopy(self.mnemonics),
+                          path_condition=deepcopy(self.path_condition),
+                          cond_exp_for_JUMP=deepcopy(self.cond_exp_for_JUMP),
+                          dfs_stack=deepcopy(self.dfs_stack) if dfs_stack is None else dfs_stack,
+                          call_stack=deepcopy(self.call_stack),
                           )
 
-    def inherit(self, new_block_number: int, jflag: bool = False):
-        block = self.duplicate(self.__account_number,new_block_number)
-        if not jflag:
-            block.set_pc(block.get_jumpdest())
-        block.clean_mnemonics()
+    def inherit(self,
+                new_block_number: int,
+                jflag: bool = False):
+        block = self.duplicate(new_block_number=new_block_number)
+        # When a new block is reached by jump
+        if jflag:
+            block.set_pc(self.get_jumpdest())
+            block.jumpflag = True
+        else:
+            block.set_pc(block.get_pc()+1)
+        #block.clean_mnemonics()
         return block
 
     def clean_mnemonics(self):
         self.mnemonics = []
-        self.set_jumpdest(-1)
+        self.__jumpdest = -1
 
     def push_dfs_stack(self, block:BasicBlock):
         self.dfs_stack.append(block)
 
-    def pop_dfs_stack(self):
-        self.dfs_stack.pop()
+    def pop_dfs_stack(self) -> BasicBlock:
+        return self.dfs_stack.pop()
+
+    def get_dfs_stack_size(self) -> int:
+        return len(self.dfs_stack)
 
     def show_dfs_stack(self):
         print(self.dfs_stack)
@@ -373,28 +530,58 @@ class BasicBlock:
     def push_call_stack(self, block:BasicBlock):
         self.call_stack.append(block)
 
-    def pop_call_stack(self):
-        self.call_stack.pop()
+    def pop_call_stack(self) -> BasicBlock:
+        return self.call_stack.pop()
+
+    def get_call_stack_size(self) -> int:
+        return len(self.call_stack)
 
     def show_call_stack(self):
         print(self.call_stack)
 
-    def set_pc(self, pc):
+    def set_pc(self, pc:int):
         self.__machine_state.set_pc(pc)
-    def set_jumpdest(self,dest):
-        self.jumpdest = dest
-    def get_jumpdest(self):
-        return self.jumpdest
-    # TODO
-    # VMが持つデータを取り出す(pc以外は参照として)
-    def extract_data(self):
-        return self.__machine_state.get_memory(),\
-               self.__machine_state.get_stack(),\
-               self.__storage,\
-               self.__machine_state.get_pc()
 
-    def add_constraint_to_path_condition(self, constraint):
+    def get_pc(self):
+        return self.__machine_state.get_pc()
+
+    def get_gas(self):
+        return self.__machine_state.get_gas()
+
+    def get_machine_state(self) -> MachineState:
+        return self.__machine_state
+
+    def get_exec_env(self) -> ExecutionEnvironment:
+        return self.__exec_env
+
+    def set_jumpdest(self, dest):
+        print(dest,type(dest))
+        if isinstance(dest,str):
+            self.__jumpdest = int(dest, 16)
+        elif isinstance(dest,BitVecNumRef):
+            self.__jumpdest = dest.as_long()
+        elif isinstance(dest,int):
+            self.__jumpdest = dest
+        else:
+            raise DevelopmentErorr
+
+    def get_jumpdest(self):
+        return self.__jumpdest
+
+    # VMが持つデータを取り出す(pc以外は参照として)
+    # def extract_data(self):
+    #     return self.machine_state.get_memory(),\
+    #            self.machine_state.get_stack(),\
+    #            self.__storage,\
+    #            self.machine_state.get_pc()
+
+    def add_constraint_to_path_condition(self, constraint: BoolRef):
         self.path_condition = simplify(And(self.path_condition, constraint))
+
+    def integrate_path_condition(self, constraint: BoolRef):
+        self.path_condition = simplify(
+            Or(self.path_condition, constraint)
+        )
 
     def get_path_condition(self):
         return self.path_condition
@@ -405,123 +592,10 @@ class BasicBlock:
     def get_cond_exp_for_JUMP(self):
         return self.cond_exp_for_JUMP
 
+    def get_exec_env(self) -> ExecutionEnvironment:
+        return self.__exec_env
 
-class CfgManager:
-    def __init__(self, cfg_num:int):
-        self.cfg_num = cfg_num
-        self.__basic_blocks = []
-        self.__visited_blocks = []
-        self.__edges = defaultdict(list)
-        self.__CFG_name = "CFG_{}".format(self.cfg_num)
-
-    def add_basic_block(self, basic_block : BasicBlock):
-        self.__basic_blocks.append(basic_block)
-
-    def add_visited_block(self, basic_block : BasicBlock):
-        self.__visited_blocks.append(basic_block)
-
-    def get_basic_blocks(self):
-        return self.__basic_blocks
-
-    def get_visited_blocks(self):
-        return self.__visited_blocks
-
-    def add_edge(self, origin: BasicBlock, dest: BasicBlock):
-        self.__edges[origin].append(dest)
-
-    def get_dest_blocks(self, origin: BasicBlock):
-        return self.__edges[origin]
-
-    def get_CFG_name(self):
-        return self.__CFG_name
-
-    def extract_mnemonics(self, block: BasicBlock):
-        # TODO dotファイルとして出力できるように変更
-        node = block.get_block_number()
-        nodes = set()
-        nodes.add(node)
-        mnemonics = {node:str(block.get_mnemonic_as_str())}
-        jumpdests = {node:block.get_jumpdest()}
-        edges = ''
-        dests = self.get_dest_blocks(block)
-        for d in dests:
-            dn = d.get_block_number()
-            nodes.add(dn)
-            edges += 'block' + str(node) + ' -> ' + 'block' + str(dn) + '\n'
-            m, e, n, j= self.extract_mnemonics(d)
-            mnemonics.update(m)
-            edges += e
-            nodes |= n
-            jumpdests.update(j)
-
-        return (mnemonics,edges,nodes,jumpdests)
-
-    def gen_CFG(self):
-        root = self.__basic_blocks[0]
-        mnemonics,edges,nodes,jumpdests = self.extract_mnemonics(root)
-        nodedefine = ''
-        for n in nodes:
-            nodedefine += 'block' + str(n) + '[shape=box,label = "'
-            nodedefine += mnemonics[n]
-            if jumpdests[n] != -1:
-                nodedefine += 'jumpdest: {0:04x}\n'.format(jumpdests[n])
-            nodedefine += '"];\n'
-
-        cfg = 'digraph ' + self.get_CFG_name() + ' {\n'
-        cfg += nodedefine
-        cfg += edges
-        cfg += '}'
-
-        return (self.get_CFG_name(),cfg)
+    def get_machine_state(self) -> MachineState:
+        return self.__machine_state
 
 
-class Account:
-    def __init__(self, bytecode: str, account_num: int, balance:BitVecRef = None):
-        self.bytecode = bytecode
-        self.codesize = lambda:len(bytecode)
-        self.account_num = account_num
-        self.balance = BitVec256('account_balance_{}'.format(self.account_num)) if balance is None else balance
-
-    def get_account_num(self) -> int:
-        return self.account_num
-
-
-
-
-
-
-
-# if __name__ == '__main__':
-#     m = Memory()
-#     m.mstore(0,BitVec("hoge",256))
-#     print(m.mload(0))
-#     print(m.mload(45))
-#     print(m.__memdata)
-#
-#     s = Stack()
-#     t = BitVecVal(100+ 2**1024-1,256)
-#     print(t)
-#     s.push(t)
-#     print(s.pop())
-#     print(s.pop())
-#     s.push(BitVecVal(1,256))
-#     s.push(BitVecVal(2,256))
-#     s.push(BitVec("hoge",256))
-#     s.push(BitVecVal(4,256))
-#     s.swapx(1)
-#     s.dupx(1)
-#     s.dupx(5)
-#     s.swapx(4)
-#     import sys
-#     for i in range(s.size()):
-#         sys.stdout.write(str(s.__stackdata[i]))
-#         sys.stdout.write(' ')
-#
-#     s2 = s.duplicate(1)
-#     for i in range(s2.size()):
-#         sys.stdout.write('i={} '.format(i))
-#         sys.stdout.write(str(simplify(s2.__stackdata[i] * BitVecVal(2, 256) / BitVecVal(2, 256))))
-#         print()
-#
-#
-#

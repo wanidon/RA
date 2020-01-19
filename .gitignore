@@ -104,4 +104,5 @@ venv.bak/
 # mypy
 .mypy_cache/
 
-/test/playground
+test/
+playground/

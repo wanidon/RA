@@ -8,8 +8,19 @@ class DevelopmentErorr(Exception):
         self.msg = msg
     __str__ = lambda self: 'Implementation or design error. ' + self.msg
 
+class SettingError(Exception):
+    def __init__(self, msg=''):
+        if len(msg) != 0:
+            msg += ' '
+        self.msg = msg
+    __str__ = lambda self: 'Setting error. ' + self.msg
+
+
 class NotBitVecRef256Erorr(DevelopmentErorr):
     __str__ = lambda self: super().__str__() + 'The given object is not 256bit-BitVector.'
+
+class NotBitVecNumRef256Erorr(DevelopmentErorr):
+    __str__ = lambda self: super().__str__() + 'The given object is not concrete value of 256bit-BitVector.'
 
 class EVMbytecodeError(DevelopmentErorr):
     __str__ = lambda self: super().__str__() + 'Or, the given EVM byte code may be incorrect.'

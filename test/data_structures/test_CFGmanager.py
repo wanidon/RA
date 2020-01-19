@@ -10,30 +10,37 @@ account_number = 0
 block_number = 0
 
 b1 = BasicBlock(account_number, block_number)
-block_number += 1
-b1.add_mnemonic(2, 'HOGE')
-b1.add_mnemonic(2, 'HOGE2')
-b1.add_mnemonic(2, 'HOGE3')
-b1.set_jumpdest(0x1e)
 
-b2 = b1.inherit(block_number)
-block_number += 1
-b2.add_mnemonic(2, 'FUGA')
+manager.set_procesisng_block(b1)
 
-b3 = b1.inherit(block_number,jflag=True)
-block_number += 1
-b3.add_mnemonic(2, 'HOGEFUGA')
+manager.add_mnemonic('HOGE')
+manager.processing_block.__machine_state.pc += 2
+manager.add_mnemonic('HOGE2 84')
+manager.processing_block.__machine_state.pc += 4
 
-manager.add_basic_block(b1)
-manager.add_basic_block(b2)
-manager.add_basic_block(b3)
-manager.add_edge(b1, b2)
-manager.add_edge(b1, b3)
+manager.set_jump_dest(0x1e)
+
+
+manager.inherit_from_processing_block()
+manager.add_mnemonic('FUGA')
+manager.processing_block.__machine_state.pc += 2
+manager.add_mnemonic('FUGA2 7e')
+manager.processing_block.__machine_state.pc += 4
+
+# TODO manager.rollback()
+manager.add_mnemonic('FOO')
+manager.processing_block.__machine_state.pc += 2
+manager.add_mnemonic('BAR')
+manager.processing_block.__machine_state.pc += 2
+
+
 print(manager.get_dest_blocks(b1))
 name, cfg = manager.gen_CFG()
 print(name)
 print(cfg)
+
 with open(name + '.dot', 'w') as f:
     f.write(cfg)
+manager.show_all()
 
 
