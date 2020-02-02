@@ -1,7 +1,10 @@
-from data_structures import BasicBlock, ExecutionEnvironment, Account
+from data_structures import BasicBlock, ExecutionEnvironment, Memory, Stack
 from exceptions import DevelopmentErorr
-from z3 import Solver, unsat, Not, BitVecRef
+from z3 import Solver, unsat, Or, Not, BitVecRef, BoolRef, simplify
 from collections import defaultdict
+from utils import dbgredmsg
+
+from copy import deepcopy
 
 class ControlFlowManager:
     def __init__(self):
@@ -22,7 +25,7 @@ class ControlFlowManager:
         return self.__cfmanager_id
 
     def get_exec_id(self):
-        return id(self.processing_block.__exec_env)
+        return self.processing_block.get_exec_env().get_exec_env_id()
 
     def push_to_call_stack(self, block: BasicBlock):
         self.processing_block.push_call_stack(block)
@@ -34,7 +37,9 @@ class ControlFlowManager:
         self.processing_block.push_dfs_stack(block)
 
     def pop_from_dfs_stack(self) -> BasicBlock:
-        return self.processing_block.pop_dfs_stack()
+
+        b=self.processing_block.pop_dfs_stack()
+        return b
 
     def is_dfs_stack_empty(self):
         return self.processing_block.get_dfs_stack_size() == 0
@@ -59,12 +64,17 @@ class ControlFlowManager:
         self.processing_block = block
         self.basic_blocks.append(block)
 
-    def get_processing_block(self):
+    def get_processing_block(self) -> BasicBlock:
         return self.processing_block
 
-    # ジャンプなしでブロック更新がある場合
+    def integrate_path_condition(self, constraint: BoolRef, integrated_block: BasicBlock):
+        integrated_block.set_path_condition(
+            simplify(Or(integrated_block.get_path_condition, constraint))
+        )
+        for dest in self.get_dest_blocks(integrated_block):
+            self.integrate_path_condition(constraint, dest)
+
     def inherit_from_processing_block(self, continuable: bool, jumpable: bool, condition):
-        print(continuable, jumpable)
         s = Solver()
         s.push()
 
@@ -74,13 +84,13 @@ class ControlFlowManager:
             continuation_block = self.processing_block.inherit(len(self.basic_blocks), False)
             continuation_block.add_constraint_to_path_condition(Not(condition))
             # 到達不能の場合　または　到達済みの場合何もしない
+            # nothing to do when unreachable or reached
             s.add(continuation_block.get_path_condition())
             if not s.check() == unsat or not\
                     self.visited_address[self.get_exec_id()][self.processing_block.get_pc()]:
 
                 self.basic_blocks.append(continuation_block)
                 self.__edges[self.processing_block].append(continuation_block)
-                print('pc of conti block = ', continuation_block.get_pc())
 
             s.pop()
 
@@ -99,7 +109,6 @@ class ControlFlowManager:
                 self.basic_blocks.append(jump_block)
                 self.__edges[self.processing_block].append(jump_block)
 
-                print('pc of jump block = ', jump_block.get_pc())
 
 
 
@@ -107,6 +116,7 @@ class ControlFlowManager:
             self.processing_block = continuation_block
             if jumpable:
                 self.push_to_dfs_stack(jump_block)
+
         else:
             self.processing_block = jump_block
 
@@ -118,21 +128,52 @@ class ControlFlowManager:
     #     self.basic_blocks.append(jump_block)
     #     self.__edges[self.processing_block].append(jump_block)
 
-
-
-
+    # switch to block beginning with JUMPDEST
     def search_existing_block(self,
-                              exec_id:int,
-                              pc:int):
+                              exec_id: int,
+                              pc: int):
         for block in self.basic_blocks:
-            if block.get_machine_state().get_pc()==pc \
+            if block.get_machine_state().get_pc() == pc \
                     and block.get_exec_env().get_exec_env_id() == exec_id\
                     and block != self.processing_block:
-                import sys
-                print('search_existing_block!',self.processing_block,block)
-                self.add_edge(self.processing_block, block)
-                self.processing_block = block
-                return
+                return block
+        return None
+
+
+    def switch_block(self,
+                      exec_id: int,
+                      pc: int):
+        block = self.get_processing_block().inherit(
+            new_block_number=self.get_num_basicblocks()
+        )
+        self.add_edge(self.get_processing_block(), block)
+        block.set_pc(block.get_pc()-1)
+        self.set_procesisng_block(block)
+
+    #廃止
+    def switch_existing_block(self,
+                              exec_id: int,
+                              pc: int):
+        block = self.search_existing_block(exec_id,pc)
+        if block is not None:
+            dbgredmsg('pre dfs stack size=',self.get_processing_block().get_dfs_stack_size())
+            dbgredmsg(self.processing_block, block)
+            self.add_edge(self.processing_block, block)
+            self.set_procesisng_block(block)
+            dbgredmsg('next dfs stack size=',self.get_processing_block().get_dfs_stack_size())
+            return
+        else:
+            dbgredmsg('not found')
+
+            # next_block = self.get_processing_block().inherit(
+            #         new_block_number=self.get_num_basicblocks()
+            #     )
+            #
+            # self.add_basic_block(next_block)
+            # self.add_edge(self.get_processing_block(), next_block)
+            # # next_block.set_pc(next_block.get_pc())
+            # self.set_procesisng_block(next_block)
+
         return
 
     def external_call(self,
@@ -147,14 +188,15 @@ class ControlFlowManager:
         self.push_to_call_stack(continuation_block)
 
 
-
+        new_block_number = len(self.basic_blocks)
         external_block = self.processing_block.duplicate(
             # account_number=account_number,
-            new_block_number=len(self.basic_blocks),
-            #machine_state=machine_state,
+            new_block_number=new_block_number,
             exec_env=exec_env,
             dfs_stack=[])
         external_block.set_pc(0)
+        external_block.get_machine_state().set_stack(Stack(block_number=new_block_number))
+        external_block.get_machine_state().set_memory(Memory(block_number=new_block_number))
         external_block.add_constraint_to_path_condition(condition)
 
         # # TODO manage visited address
@@ -164,7 +206,6 @@ class ControlFlowManager:
         self.basic_blocks.append(external_block)
         self.__edges[self.processing_block].append(external_block)
 
-        print('pc of external block = ', external_block.get_pc())
 
 
 
@@ -179,22 +220,55 @@ class ControlFlowManager:
 
 
     def rollback_from_dfs_stack(self):
-        if self.is_dfs_stack_empty():
-            raise DevelopmentErorr('call stack is empty')
-        else:
-            block = self.pop_from_dfs_stack()
-            self.processing_block = block
-            print(block)
-            return block
+        while not self.is_dfs_stack_empty():
+            next_block = self.pop_from_dfs_stack()
+            next_pc = next_block.get_pc()
+            if self.visited_address[self.processing_block.get_exec_env().get_exec_env_id()][next_pc]:
+                # for edge in self.__edges.values():
+                #     while next_block in edge:
+                #         edge.remove(next_block)
+                #         print('deleted')
+                continue
+            else:
+                self.set_procesisng_block(next_block)
+                return next_block
 
-    def rollback_from_call_stack(self):
+        return False
+
+
+
+
+    def rollback_from_call_stack(self) -> BasicBlock:
         if self.is_call_stack_empty():
-            raise DevelopmentErorr('call stack is empty')
+            return False
         else:
-            block = self.pop_from_call_stack()
-            self.add_edge(self.processing_block,block)
-            block.add_constraint_to_path_condition(self.processing_block.get_path_condition())
-            return block
+            # print('rollback from call stack')
+            return_block = self.pop_from_call_stack()
+            self.add_edge(self.processing_block, return_block)
+            return_block.add_constraint_to_path_condition(self.processing_block.get_path_condition())
+            new_block_num = return_block.get_block_number()
+            # return_block.get_machine_state().set_memory(
+            #     self.processing_block.get_machine_state().get_memory().duplicate(new_block_num))
+            # return_block.get_machine_state().set_stack(
+            #     self.processing_block.get_machine_state().get_stack().duplicate(new_block_num))
+            # print('storage:',id(self.processing_block.get_machine_state().get_storage()))
+            # print(self.processing_block.get_machine_state().get_storage().get_data())
+            # print('dup:')
+            # print(self.processing_block.get_machine_state().get_storage().duplicate(new_block_num).get_data())
+            return_block.get_machine_state().set_storage(
+                self.processing_block.get_machine_state().get_storage().duplicate(new_block_num))
+            return_block.get_machine_state().set_balance(
+                deepcopy(self.processing_block.get_machine_state().get_balance())
+            )
+            # print('balance prev')
+            # print(self.processing_block.get_machine_state().get_balance())
+            # print('balance next')
+            # print(return_block.get_machine_state().get_balance())
+
+
+            self.processing_block = return_block
+
+            return return_block
 
 
     def add_basic_block(self, basic_block: BasicBlock):
@@ -210,10 +284,7 @@ class ControlFlowManager:
         return self.__visited_blocks
 
     def add_edge(self, origin: BasicBlock, dest: BasicBlock):
-        if origin in self.__edges[dest]:
-            import sys
-            sys.stderr.write('looooooooooooooooooooooooooop')
-            print()
+        dest.depth = origin.depth + 1
         self.__edges[origin].append(dest)
 
     def get_dest_blocks(self, origin: BasicBlock):
@@ -232,6 +303,8 @@ class ControlFlowManager:
         dests = self.get_dest_blocks(block)
         for d in dests:
             if d==block:
+                continue
+            if len(d.get_mnemonic_as_str())==0:
                 continue
             dn = d.get_block_number()
             nodes.add(dn)

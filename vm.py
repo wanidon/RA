@@ -1,13 +1,19 @@
 from data_structures import Stack, Memory, MsgData, Storage, Returndata, ExecutionEnvironment, WorldState, MachineState, BasicBlock, Account
 from control_flow_manager import ControlFlowManager
-from web3 import Web3
-from z3 import BV2Int, Int2BV, And, Or, Xor, Not, If, BitVecRef, BitVecNumRef, Concat, Extract, simplify, Solver, sat, unsat, UDiv, URem, Concat
-from utils import BitVec256, BitVecVal256, pdbg, sign, BitVecOne256, BitVecZero256, bv_to_signed_int
+from z3 import BV2Int, Int2BV, And, Or, Xor, Not, If, BitVecRef, BitVecNumRef, BitVecVal, BitVec,  Concat, Extract, simplify, Solver, sat, unsat, UDiv, URem, Concat, AstRef, LShR, ZeroExt
+from utils import BitVec256, BitVecVal256, pdbg, sign, BitVecOne256, BitVecZero256, bv_to_signed_int, dbgredmsg
 from collections import defaultdict
 from fee_schedule import c
-from copy import deepcopy
 from exceptions import DevelopmentErorr
+from vulnerability_verifier import VulnerabilityVerifier
+from constant import RUNNING, TERMINATED, RETURNED, CALLABLE
+
+
+from copy import deepcopy
 from sha3 import keccak_256 # this needs pysha3
+import subprocess
+import sys
+
 
 
 WORDBITSIZE = 256
@@ -21,9 +27,10 @@ class VM():
         self.primary_contract_index = 0
         self.secondary_contract = None
         self.tertiary_contracts = []
+        self.vulnerability_verifier = VulnerabilityVerifier()
         # self.exec_env_num = 0
 
-    def add_primary_contract(self, bytecode:str):
+    def add_primary_contract(self, bytecode: str):
         addr = self.σ.add_account(bytecode)
         self.primary_contracts.append(addr)
         return addr
@@ -35,77 +42,138 @@ class VM():
         for b in bytecodes:
             self.tertiary_contracts.append(self.σ.add_account(b))
 
-    def init_state(self, addr: BitVecRef, value: BitVecRef = None):
+    def init_state(self, addr: BitVecRef,
+                   value: BitVecRef = None,
+                   storage = None,
+                   balance = None,
+                   exec_env_id = None,
+                   msg_sender=None):
 
 
         account = self.σ.accounts[str(addr)]
 
-
-        # self.exec_env_num += 1
-
-        µ = MachineState()
-        I = ExecutionEnvironment(
+        µ = MachineState(storage=storage,balance=balance)
+        I = ExecutionEnvironment(exec_env_id=exec_env_id,
                                  Ia=addr,
                                  Ib=account.bytecode,
-                                 Iv=value)
+                                 Iv=value,
+                                 Is=msg_sender)
 
         block = BasicBlock(block_number=0, machine_state=µ, exec_env=I)
         self.cfmanager.set_procesisng_block(block)
 
 
+    def verify(self):
+        while self.primary_contract_index < len(self.primary_contracts):
+            self.vulnerability_verifier.set_extracting_fid()
+
+            # sys.stderr.write('extracting a function id\n')
+            self.cfmanager = ControlFlowManager()
+            contract = self.primary_contracts[self.primary_contract_index]
+            self.init_state(contract)
+            self.get_exec_env().get_msg_data().set_function_id()
+            self.get_exec_env().get_msg_data().set_arguments(256)
+            self.run()
+
+            name, cfg = self.cfmanager.gen_CFG()
+            name = 'CFG-no-specified-fid'
+            with open(name + '.dot', 'w') as f:
+                f.write(cfg)
+            subprocess.call(['dot', '-T', 'png', name + '.dot', '-o', name + '.png'])
+            print('callable fids=',self.vulnerability_verifier.get_callable_function_ids())
+            print('fids=',self.vulnerability_verifier.get_function_ids())
 
 
-        # # 主たるコントラクトである場合
-        # if exec_env is None:
-        #
-        #     # TODO: アカウントごとの番号ではなく実行ごとの番号
-        #     exec_env_num = account.get_account_num()
-        #
-        #     self.I = Execution_environment(
-        #         exec_env_num, # as exec_env_num
-        #         addr,
-        #         BitVec256('Io_{}'.format(exec_env_num)),
-        #         BitVec256('Ip_{}'.format(exec_env_num)),
-        #         [], # empty data
-        #         BitVec256('Is_{}'.format(exec_env_num)),
-        #         BitVec256('Iv_{}'.format(exec_env_num)),
-        #         account.bytecode,
-        #         {}, # TODO: blockheader IH
-        #         0,
-        #         True)
-        #
-        #
-        #         # BitVecRef, Io: BitVecRef, Ip: BitVecRef, Id: BitVecRef, Is: BitVecRef, Iv: BitVecRef, Ib: BitVecRef, IH: dict, Ie: int, Iw: bool):
-        #     block = BasicBlock(account.get_account_num(),
-        #                             0,
-        #                             self.µ)
-        #     self.CfgManager = CfgManager(exec_env_num)
-        #     self.CfgManager.set_procesisng_block(block)
-        #
-        #
-        #
-        # # 従たるコントラクトである場合
-        # else:
-        #     self.I = exec_env
-        #     self.µ.stack = stack
-        #     self.µ.memory = memory
-        #     if storage is not None:
-        #         self.µ.storage = storage
-        #     if sender is not None:
-        #         self.I.msg_sender = sender
-        #
-        #     self.CfgManager.set_procesisng_block(block)
+            if len(self.vulnerability_verifier.callable_function_ids) == 0:
+                dbgredmsg('vulnerable:',False)
+
+
+
+            states=defaultdict(dict)
+
+
+            for x in self.vulnerability_verifier.callable_function_ids:
+                # sys.stderr.write('independent execution: x\n')
+                self.vulnerability_verifier.set_executing_caller()
+                self.cfmanager = ControlFlowManager()
+                self.init_state(addr=contract,exec_env_id=x.as_long(),msg_sender=ZeroExt(96,BitVec('address1', 160)))
+                self.get_exec_env().get_msg_data().set_function_id(x)
+                self.get_exec_env().get_msg_data().set_arguments(256)
+                self.run()
+
+                caller_state = self.vulnerability_verifier.get_caller_state()
+                balance = caller_state.get_data()['BALANCE']
+
+                for y in self.vulnerability_verifier.callable_function_ids:
+                    self.vulnerability_verifier.init_states()
+                    # dbgredmsg('independent execution: y')
+
+                    self.vulnerability_verifier.set_executing_callee()
+                    self.cfmanager = ControlFlowManager()
+                    self.init_state(addr=contract,exec_env_id=y.as_long(),
+                                    storage=caller_state,balance=balance,msg_sender=ZeroExt(96,BitVec('address1', 160)))
+                    self.get_exec_env().get_msg_data().set_function_id(y)
+                    self.get_exec_env().get_msg_data().set_arguments(256)
+                    self.run()
+                    # dbgredmsg('vulnerability_verifier.independently_executed_state')
+
+
+
+                    #ここからcross-function
+
+                    # dbgredmsg('start cross-function execution')
+                    self.vulnerability_verifier.set_x(x)
+                    self.vulnerability_verifier.set_y(y)
+                    self.vulnerability_verifier.set_first_call(True)
+                    self.vulnerability_verifier.set_second_call(True)
+                    self.vulnerability_verifier.set_executing_cross_function()
+                    self.cfmanager = ControlFlowManager()
+                    self.init_state(addr=contract, exec_env_id=x.as_long(), msg_sender=ZeroExt(96,BitVec('address1', 160)))
+                    self.get_exec_env().get_msg_data().set_function_id(x)
+                    self.get_exec_env().get_msg_data().set_arguments(256)
+                    self.run()
+                    # dbgredmsg('vulnerability_verifier.cross_called_executed_state')
+                    dbgredmsg('x=', x, 'y=', y)
+                    dbgredmsg('vulnerable:', self.vulnerability_verifier.diff_states())
+
+
+                    name, cfg = self.cfmanager.gen_CFG()
+                    name = 'CFG-{}-{}'.format(x, y)
+                    with open(name+'-state.txt','w') as f:
+                        f.write(str(self.vulnerability_verifier.independently_executed_state)+'\n'+str(self.vulnerability_verifier.cross_called_executed_state))
+                    with open(name + '.dot','w') as f:
+                        f.write(cfg)
+                    subprocess.call(['dot', '-T', 'png', name + '.dot', '-o', name + '.png'])
+
+
+
+
+
+            self.primary_contract_index += 1
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     def run_all(self):
-        import sys
+
         while self.primary_contract_index < len(self.primary_contracts):
             sys.stderr.write('run a contract¥n')
             self.cfmanager = ControlFlowManager()
             a = self.primary_contracts[self.primary_contract_index]
             self.init_state(a)
             self.get_exec_env().get_msg_data().set_function_id()
+            self.get_exec_env().get_msg_data().set_arguments(256)
             self.run()
-            print(self.cfmanager.show_all())
             name, cfg = self.cfmanager.gen_CFG()
 
 
@@ -114,6 +182,8 @@ class VM():
                 f.write(cfg)
             self.primary_contract_index += 1
             self.show_vm_state()
+            subprocess.call(['dot', '-T', 'png', name+'.dot', '-o', name+'.png'])
+
 
     def show_vm_state(self):
         # I
@@ -142,10 +212,11 @@ class VM():
     def get_account_num(self) -> int:
         return self.σ.get_account(self.get_address()).get_account_num()
 
-    def get_account_balance(self, addr=None) -> BitVecRef:
-        addr = str(self.get_address()) if addr is None else addr
+    def get_balance(self) -> BitVecRef:
+        return self.get_machine_state().get_balance()
 
-        return self.σ.get_account(addr).get_balance()
+    def set_balance(self,balance):
+        self.get_machine_state().set_balance(balance)
 
     def get_origin(self) -> BitVecRef:
         return self.get_exec_env().tx_originator
@@ -230,14 +301,9 @@ class VM():
         self.cfmanager.inherit_from_processing_block(continuable, jumpable, condition)
 
     def external_call(self,
-                      # addr:BitVecRef,
-                      # account_number:int,
-                      exec_env:ExecutionEnvironment,
-                      #machine_state:MachineState=None
+                      exec_env:ExecutionEnvironment
                       ):
-        self.cfmanager.external_call(# addr,
-                                     # account_number,
-                                     exec_env)
+        self.cfmanager.external_call(exec_env)
 
     def set_jumpdest(self, dest):
         self.cfmanager.processing_block.set_jumpdest(dest)
@@ -251,18 +317,28 @@ class VM():
     def run(self):
         while True:
 
-            if self.cfmanager.visited_address[self.get_exec_env().get_exec_env_id()][self.get_pc()]:
-                import sys
-                sys.stderr.write(str())
-                sys.stderr.write('--{}:visited--'.format(self.get_pc()))
-                # # TODO: 終了系の命令でrollbackを実行
-                # if self.cfmanager.is_dfs_stack_empty():
-                #     return
-                # else:
-                #     self.cfmanager.rollback_from_dfs_stack()
-                #     continue
-            else:
-                self.cfmanager.visited_address[self.get_exec_env().get_exec_env_id()][self.get_pc()] = True
+            # if self.cfmanager.visited_address[
+            #     self.get_exec_env().get_exec_env_id()][self.get_pc()]:
+            #
+            #
+            #     block = self.cfmanager.search_existing_block(
+            #         self.get_exec_env().get_exec_env_id(), self.get_pc())
+            #     dbgredmsg(block,' was visited')
+            #     self.cfmanager.integrate_path_condition(
+            #         constraint=self.get_processing_block().get_path_condition(),
+            #         integrated_block=block)
+            #     if self.op_stop() == False:
+            #         break
+            #     # # TODO: 終了系の命令でrollbackを実行
+            #     # if self.cfmanager.is_dfs_stack_empty():
+            #     #     return
+            #     # else:
+            #     #     self.cfmanager.rollback_from_dfs_stack()
+            #     #     continue
+            # else:
+            #     self.cfmanager.visited_address[self.get_exec_env().get_exec_env_id()][self.get_pc()] = True
+
+            self.cfmanager.visited_address[self.get_exec_env().get_exec_env_id()][self.get_pc()] = True
 
 
 
@@ -274,7 +350,7 @@ class VM():
 
             hex_opcode = self.get_byte_from_bytecode()
             mnemonic = self.hex_to_mnemonic(hex_opcode)
-            print('pc=', self.get_pc(), type(self.get_pc()), mnemonic)
+            #print('pc=', self.get_pc(), type(self.get_pc()), mnemonic)
 
 
             if self.jumped():
@@ -285,15 +361,15 @@ class VM():
                     self.reach_jumpdest()
 
             elif mnemonic == 'JUMPDEST':
-                self.cfmanager.search_existing_block(
-                        self.get_exec_env().get_exec_env_id(),
-                        self.get_pc()
-                )
+                # self.cfmanager.switch_existing_block(
+                #         self.get_exec_env().get_exec_env_id(),
+                #         self.get_pc()
+                # )
                 self.cfmanager.visited_address[self.get_exec_env().get_exec_env_id()][self.get_pc()] = True
-                import sys
-                sys.stderr.write(str(self.get_pc()))
 
-                pass
+
+
+
 
 
 
@@ -314,6 +390,19 @@ class VM():
             ret = func(s, *funcarg)
             if ret is False:
                 break
+
+    def terminate(self):
+        # print('terminate')
+        # print('storage id:',id(self.get_machine_state().get_storage()))
+        # print('balance:',self.get_balance())
+        self.vulnerability_verifier.extract_data(
+            self.get_processing_block().get_path_condition(),
+            self.get_processing_block().get_block_state(),
+            self.get_machine_state().get_storage(),
+            self.get_balance(),
+            self.get_processing_block().get_depth()
+        )
+        return self.cfmanager.rollback_from_dfs_stack()
 
     def hex_to_mnemonic(self, hex: str):
         d = defaultdict(lambda: 'INVALID')
@@ -341,6 +430,10 @@ class VM():
         d['18'] = 'XOR'
         d['19'] = 'NOT'
         d['1a'] = 'BYTE'
+        d['1b'] = 'SHL'
+        d['1c'] = 'SHR'
+        d['1d'] = 'SAR'
+
         d['20'] = 'SHA3'
 
         d['30'] = 'ADDRESS'
@@ -498,18 +591,9 @@ class VM():
             'XOR': (self.op_xor, 2, 1),
             'NOT': (self.op_not, 2, 1),
             'BYTE': (self.op_byte, 2, 1),
-
-        # #     d['10'] = 'LT'
-        # d['11'] = 'GT'
-        # d['12'] = 'SLT'
-        # d['13'] = 'SGT'
-        # d['14'] = 'EQ'
-        # d['15'] = 'ISZERO'
-        # d['16'] = 'AND'
-        # d['17'] = 'OR'
-        # d['18'] = 'XOR'
-        # d['19'] = 'NOT'
-        # d['1a'] = 'BYTE'
+            'SHL': (self.op_shl, 2, 1),
+            'SHR': (self.op_shr, 2, 1),
+            'SAR': (self.op_sar, 2, 1),
 
             # 20s
             'SHA3': (self.op_sha3, 2, 1),
@@ -643,7 +727,7 @@ class VM():
 
 
 
-            'INVALID': (self.op_stop, 0, 0)  # TODO implement exceptional halting
+            'INVALID': (self.op_invalid, 0, 0)  # TODO implement exceptional halting
 
         }
         return d[mnemonic]
@@ -651,25 +735,19 @@ class VM():
         # 0s: Stop and Arithmetic Operations
 
     def op_stop(self, s):
-        print('path condition=', self.cfmanager.processing_block.get_path_condition())
-        if self.cfmanager.is_dfs_stack_empty():
-            return False
+
+        if self.cfmanager.rollback_from_call_stack():
+            # when the external call was caused by CREATE
+            prevpc = self.get_processing_block().get_pc() - 1
+            if self.get_processing_block().get_exec_env().get_code()[prevpc * 2:prevpc * 2 + 2] == 'f0':
+                self.push_to_stack(BitVecZero256())
+            elif self.get_processing_block().get_exec_env().get_code()[prevpc * 2:prevpc * 2 + 2] == 'f1':
+                self.push_to_stack(
+                    BitVec256('call_succeeds_{}_{}'.format(self.get_exec_env().get_exec_env_id(), prevpc * 2)))
+
+
         else:
-            current_block = self.get_processing_block()
-            current_pc = self.get_pc()
-            next_block = self.cfmanager.rollback_from_dfs_stack()
-            next_pc = self.get_pc()
-            # if next_pc < current_pc and self.cfmanager.visited_address[self.get_exec_env().get_exec_env_id()][next_pc]:
-            #     return False
-            if self.cfmanager.visited_address[self.get_exec_env().get_exec_env_id()][next_pc]:
-                print('execution stop!')
-                return False
-            else:
-                self.cfmanager.set_procesisng_block(next_block)
-
-
-
-
+            return self.terminate()
 
     def op_add(self, s):
         self.push_to_stack(simplify(s[0] + s[1]))
@@ -740,22 +818,9 @@ class VM():
         self.increment_pc()
 
     def op_exp(self, s):
-        s0 = s[0].as_long() if isinstance(s[0], BitVecNumRef) else s[0]
-        if isinstance(s[1], BitVecNumRef):
-            if isinstance(s[0], BitVecNumRef):
-                s1 = s[1].as_long()
-                self.push_to_stack(BitVecVal256(s0 ** s1))
-            else:
-                s1 = int(s[1].as_long())
-                v = s0
-                for i in range(s1 - 1):
-                    v *= v
-                self.push_to_stack(simplify(v))
-
-        else:
-            # TODO for bitvec
-            pass
-
+        a = s[0]
+        b = s[1]
+        self.push_to_stack(simplify(Int2BV(BV2Int(a) ** BV2Int(b),256)))
         self.increment_pc()
 
     # TODO
@@ -822,25 +887,61 @@ class VM():
         self.push_to_stack(simplify(UDiv(a, b)))
         self.increment_pc()
 
+    def op_shl(self, s):
+        shift = s[0]
+        value = s[1]
+        if isinstance(shift, BitVecNumRef):
+            shift = shift.as_long()
+            self.push_to_stack(simplify(value << shift))
+        else:
+            # too slow
+            self.push_to_stack(simplify(value * Int2BV(2 ** BV2Int(shift), 256)))
+        self.increment_pc()
+
+    def op_shr(self, s):
+        shift = s[0]
+        value = s[1]
+        if isinstance(shift, BitVecNumRef):
+            shift = shift.as_long()
+            self.push_to_stack(simplify(LShR(value, shift)))
+        else:
+            self.push_to_stack(simplify(UDiv(value, Int2BV(2 ** BV2Int(shift), 256))))
+        self.increment_pc()
+
+    def op_sar(self, s):
+        shift = s[0]
+        value = s[1]
+        if isinstance(shift, BitVecNumRef):
+            shift = shift.as_long()
+            self.push_to_stack(simplify(value >> shift))
+        else:
+            # TODO
+            # self.push_to_stack(simplify(UDiv(value, Int2BV(2 ** BV2Int(shift), 256))
+            #                             or , 256)))
+            return False
+        self.increment_pc()
+
 
         # 20s: SHA3
     def op_sha3(self, s):
 
-        # from web3 import Web3
-        # hex(Web3.toInt(Web3.soliditySha3(['uint8'], [1])))
-        # TODO
+
+        #TODO
         if isinstance(s[0],BitVecNumRef) and isinstance(s[1],BitVecNumRef):
             offset = s[0].as_long()
             length = s[1].as_long()
-            data = None
-            for i in range(offset, offset+length):
-                d = self.get_machine_state().get_memory().get_one_byte(i)
-                if not isinstance(d, BitVecNumRef):
-                    data = BitVec256('SHA3-VALUE')
-                    break
-                data += bytes(self.get_machine_state().get_memory().get_one_byte(i))
-
-        self.push_to_stack(data)
+            data = self.get_machine_state().get_memory().get_one_byte(offset)
+            for i in range(offset+1, offset+length):
+                # data += bytes(self.get_machine_state().get_memory().get_one_byte(i))
+                data = Concat(data,self.get_machine_state().get_memory().get_one_byte(i))
+        k = keccak_256()
+        data = str(simplify(data))
+        k.update(data.encode())
+        hash = k.hexdigest()
+        # print('sha3,data=',data)
+        # print(hash[:16])
+        self.push_to_stack(BitVec256('SHA3_' + hash[:16] ))
+        #self.push_to_stack(BitVec256('SHA3_{}'.format(self.get_pc())))
         self.increment_pc()
         #
         # pass
@@ -853,7 +954,7 @@ class VM():
         self.increment_pc()
 
     def op_balance(self, s):
-        self.push_to_stack(self.get_account_balance())
+        self.push_to_stack(self.get_balance())
         self.increment_pc()
 
     def op_origin(self, s):
@@ -876,7 +977,6 @@ class VM():
 
         for i in range(memsize, s[0].as_long()+WORDBYTESIZE):
             msg_data.mstore8(i, BitVecZero256())
-
         self.push_to_stack(msg_data.mload(s[0]))
         self.increment_pc()
 
@@ -917,11 +1017,8 @@ class VM():
         tmpcode = self.get_code()[codeoffset:codeoffset+copysize] + '00' * (codeoffset + copysize - codesize)
 
         memory = self.get_machine_state().get_memory()
-        print('memoffset=',memoffset,'codeoffset=',codeoffset,'copysize=',copysize,'codesize=',codesize)
-        print('tmpcode=',tmpcode[:20],'copysize=',copysize)
+
         for i in range(copysize//2):
-            # print(tmpcode[i*2:i*2+2],type(tmpcode[i*2:i*2+2]))
-            # print(i,int(tmpcode[i*2:i*2+2],16))
             memory.mstore8(memoffset+i, BitVecVal256(int(tmpcode[i*2:i*2+2],16)))
 
         self.increment_pc()
@@ -948,12 +1045,21 @@ class VM():
         self.increment_pc()
 
     def op_returndatasize(self, s):
-        # TODO
-        pass
+        self.push_to_stack(BitVecVal256(self.get_machine_state().get_return_data().size()))
+        self.increment_pc()
+
 
     def op_returndatacopy(self, s):
-        # TODO
-        pass
+        destOffset = s[0].as_long()
+        offset = s[1].as_long()
+        length = s[2].as_long()
+
+        for i in range(length):
+            self.get_machine_state().get_memory().mstore8(
+                destOffset+i,
+                self.get_machine_state().get_return_data().mload(offset+i)
+                                                          )
+        self.increment_pc()
 
 
 
@@ -1016,7 +1122,11 @@ class VM():
         self.increment_pc()
 
     def op_sstore(self, s):
-        self.get_machine_state().get_storage().sstore(s[0],s[1])
+        # print('-----------op_sstore------------:',id(self.get_machine_state().get_storage()))
+        # print(s[1])
+        # print(s[0])
+        # print('---------------------------------')
+        self.get_machine_state().get_storage().sstore(s[0], s[1])
         self.increment_pc()
 
     def op_jump(self, s):
@@ -1032,13 +1142,10 @@ class VM():
 
 
     def op_jumpi(self, s):
-
         jumpdest = s[0]
         condition = self.convert_to_expression(s[1])
 
         self.set_jumpdest(jumpdest)
-        print('row jump condition = ', s[1])
-        print('jump condition = ', condition, type(condition), self.get_pc())
         # 式でないただのシンボル変数なら，0でないかを判定
         if type(condition) == BitVecRef:
             condition = condition != 0
@@ -1047,12 +1154,15 @@ class VM():
         s.push()
         # ジャンプ可能か
         s.append(condition)
+
         jumpable = s.check() == sat
+
 
 
         s.pop()
         # 継続可能か
         s.append(Not(condition))
+
         continuable = s.check() == sat
 
         self.branch(continuable, jumpable, condition)
@@ -1084,15 +1194,13 @@ class VM():
         v = BitVecVal256(int(v, 16))
         self.push_to_stack(v)
         self.increment_pc()
-        import sys
-        print(v)
+
+
 
 
     # 80s: Duplication Operations
     def op_dupx(self, s):
-        self.get_machine_state().show_all()
         v = deepcopy(s[-1])
-        print(s)
         for i in range(len(s)-1,-1,-1):
             self.push_to_stack(s[i])
         self.push_to_stack(v)
@@ -1121,7 +1229,7 @@ class VM():
                 raise DevelopmentErorr('illegal parameter given to CREATE')
             new_code += format(op.as_long(), '02x')
 
-
+        self.set_balance(self.get_balance() - s[0])
         # generate new execution environment
         exec_env = ExecutionEnvironment(
             Ia=BitVecZero256(),
@@ -1139,115 +1247,174 @@ class VM():
 
 
     def op_call(self, s):
-        print(type(self.secondary_contract))
-        if self.secondary_contract is None:
-            self.push_to_stack(BitVec256('call_succeeds_{}_{}'.format(self.get_exec_env().get_exec_env_id(), self.get_pc()*2)))
-            self.increment_pc()
-            return
+
+        if not (isinstance(s[3], BitVecNumRef)
+                and isinstance(s[4], BitVecNumRef)
+                and isinstance(s[5], BitVecNumRef)
+                and isinstance(s[6], BitVecNumRef)):
+
+            raise DevelopmentErorr('some parameter given to CALL must be concrete value')
+
+        self.get_processing_block().add_block_state(CALLABLE)
+
+
         gas = s[0]
-        print(self.get_address(), self.secondary_contract)
-        addr = self.secondary_contract if self.get_address() != self.secondary_contract \
-            else self.primary_contracts[self.primary_contract_index]
+
         value = s[2]
-        argsOffset = s[3]
-        argsLength = s[4]
-        retOffset = s[5]
-        retLength = s[6]
+        argsOffset = s[3].as_long()
+        argsLength = s[4].as_long()
+        retOffset = s[5].as_long()
+        retLength = s[6].as_long()
 
-        if not (isinstance(argsOffset, BitVecNumRef)
-                and isinstance(argsLength, BitVecNumRef)
-                and isinstance(retOffset, BitVecNumRef)
-                and isinstance(retLength, BitVecNumRef)):
-            raise DevelopmentErorr()
+        msg_data = MsgData()
+        for i in range(argsLength):
+            op = self.get_machine_state().get_memory().get_one_byte(argsOffset + i)
+            op = BitVecVal(int(op, 16),8) if isinstance(op, str) else op
+            msg_data.mstore8(i, op)
+
+        self.get_machine_state().set_retLength(retLength)
+        self.get_machine_state().set_retOffset(retOffset)
+
+        # print('op_call')
+        # print('balance prev')
+        # print(self.get_balance())
+        self.set_balance(self.get_balance() - value)
+        # print('value:')
+        # print(value)
+        # print('balance next')
+        # print(self.get_balance())
+
+
+        # print(self.get_exec_env().msg_sender)
+        # print(self.get_address())
+        # print(self.get_balance())
 
 
 
 
-        pass
+        if self.vulnerability_verifier.is_first_call():
+            addr = self.secondary_contract
+            fid = BitVecZero256()
+            #TODO:returndata
+        elif self.vulnerability_verifier.is_second_call():
+            addr = self.primary_contracts[self.primary_contract_index]
+            fid = self.vulnerability_verifier.get_y()
+            msg_data.set_function_id(fid)
+            msg_data.set_arguments(256)
+        else:
+            self.push_to_stack(
+                BitVec256('call_succeeds_{}_{}'.format(self.get_exec_env().get_exec_env_id(), self.get_pc() * 2)))
+            self.increment_pc()
+
+            returndata = [BitVec('Return_data{}-{}_{}'.format(self.get_exec_env().get_exec_env_id(),
+                                                 self.get_pc(),
+                                                 i),8) for i in range(retLength)]
+            for i in range(retLength):
+                self.get_machine_state().get_memory().mstore8(i+retOffset,returndata[i])
+            self.get_machine_state().set_return_data(Returndata(immediate_data=returndata))
+
+            return
+
+
+        if addr is not None :
+
+
+
+            self.external_call(
+                ExecutionEnvironment(
+                    exec_env_id=fid.as_long(),
+                    Ia=addr,
+                    Ib=self.σ.get_account(str(addr)).get_bytecode(),
+                    Is=self.get_address(),
+                    Iv=value,
+                    Id=msg_data
+
+
+                )
+            )
+
+
+
+
+
+
+
+
+
+
     def op_callcode(self, s):
         pass
 
     def op_return(self, s):
-        print('pc=',self.get_pc())
+
+
+
+
+        # extract return data
         if not(isinstance(s[0],BitVecNumRef) and isinstance(s[1],BitVecNumRef)):
-            self.get_machine_state().show_all()
             raise DevelopmentErorr
 
         offset = s[0].as_long()
-
         length = s[1].as_long()
 
-        return_value = ''
+        retOffset = self.get_machine_state().get_retOffset()
+        retLength = self.get_machine_state().get_retLength()
+        self.get_machine_state().set_retOffset(-1)
+        self.get_machine_state().set_retLength(-1)
+
+        returndata = []
         for i in range(offset, offset+length):
-            return_value += format(self.get_machine_state().get_memory().get_one_byte(i).as_long(),'02x')
-        print(offset, length,return_value[:20],len(return_value))
+            returndata.append(
+                self.get_machine_state().get_memory().get_one_byte(i))
 
-        if self.cfmanager.get_processing_block().get_call_stack_size() > 0:
-            return_block = self.cfmanager.pop_from_call_stack()
-            # self.cfmanager.add_edge(self.get_processing_block(), return_block)
-            return_block.get_machine_state().set_memory(deepcopy(self.get_machine_state().get_memory()))
-            return_block.get_machine_state().set_stack(deepcopy(self.get_machine_state().get_stack()))
-            self.cfmanager.processing_block = return_block
+        next_block = self.cfmanager.rollback_from_call_stack()
+        if next_block:
 
-
-
-
-
+            self.get_machine_state().set_return_data(
+                Returndata(block_number=next_block.get_block_number(),
+                           immediate_data=returndata))
+            for i in range(retLength):
+                next_block.get_machine_state().get_memory().mstore8(retOffset+i,returndata[i])
 
 
             # when the external call was caused by CREATE
-            prevpc = return_block.get_pc() - 1
-            # import sys
-            #
-            # sys.stderr.write(str(s[0].size()))
-            # sys.stderr.write(str(self.get_account_balance().size()))
+            prevpc = self.get_processing_block().get_pc() - 1
+            if self.get_processing_block().get_exec_env().get_code()[prevpc*2:prevpc*2+2] == 'f0':
 
-            import sys
-            sys.stderr.write(return_block.get_exec_env().get_code()[prevpc*2:prevpc*2+2])
-            if return_block.get_exec_env().get_code()[prevpc*2:prevpc*2+2] == 'f0':
-
-                addr = self.add_primary_contract(return_value)
-                # sys.stderr.write(str(type(addr)))
+                addr = self.add_primary_contract(''.join([format(v.as_long(),'02x') for v in returndata]))
 
                 # TODO gas calculation
-                condition = And(s[0] <= self.get_account_balance(),
+                condition = And(s[0] <= self.get_balance(),
                                 self.get_machine_state().get_stack().get_stack_size() < 1024)
-                print(condition,simplify(If(condition,
-                                   addr
-                                      , BitVecZero256())))
                 self.push_to_stack(simplify(If(condition,
-                                   addr
-                                      , BitVecZero256())))
-                print('aaaaaaaaaaaa')
-                self.get_machine_state().show_all()
-                print('bbbbbbbbbbb')
+                                   addr,
+                                   BitVecZero256()
+                                               )))
+            elif self.get_processing_block().get_exec_env().get_code()[prevpc*2:prevpc*2+2] == 'f1':
+                self.push_to_stack(BitVec256('call_succeeds_{}_{}'.format(self.get_exec_env().get_exec_env_id(), prevpc * 2)))
 
-        elif self.cfmanager.get_processing_block().get_dfs_stack_size() > 0:
-            self.cfmanager.pop_from_dfs_stack()
+
+
         else:
-            return False
+            return self.terminate()
 
 
     def op_delegatecall(self, s):
         pass
     def op_revert(self, s):
-        if self.cfmanager.get_processing_block().get_call_stack_size() > 0:
-            return_block = self.cfmanager.pop_from_call_stack()
-            # self.cfmanager.add_edge(self.get_processing_block(),return_block)
-            self.cfmanager.set_procesisng_block(return_block)
-        else:
-            if self.cfmanager.is_dfs_stack_empty():
-                return False
-            else:
-                self.cfmanager.rollback_from_dfs_stack()
+        # if self.cfmanager.get_processing_block().get_call_stack_size() > 0:
+        #     return_block = self.cfmanager.pop_from_call_stack()
+        #     # self.cfmanager.add_edge(self.get_processing_block(),return_block)
+        #     self.cfmanager.set_procesisng_block(return_block)
+        # else:
+        #     if self.cfmanager.is_dfs_stack_empty():
+        #         return False
+        #     else:
+        #         self.cfmanager.rollback_from_dfs_stack()
+        self.op_return(s)
 
-    def invalid(self,s):
+    def op_invalid(self,s):
         # TODO 異常終了
+        print('op=',self.get_code()[self.get_pc()*2:self.get_pc()*2+2])
+        return False
 
-        self.op_stop(s)
-if __name__ == '__main__':
-    sha3int = int(Web3.sha3(text='withdraw()').hex(),16)
-    print(sha3int)
-    from z3 import BitVecVal,BitVec
-    sha3bv = BitVecVal(sha3int,256)
-    print(sha3bv.as_long())

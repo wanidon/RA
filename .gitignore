@@ -106,3 +106,6 @@ venv.bak/
 
 test/
 playground/
+.png
+.dot
+

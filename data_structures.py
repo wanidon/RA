@@ -2,10 +2,11 @@
 # coding:utf-8
 
 from collections import deque
-from copy import deepcopy
-from z3 import And, Or, Not, BitVecRef, BitVecNumRef, BoolRef, BitVec, BitVecVal, Concat, Extract, simplify, Int, Solver, unsat, sat, ZeroExt
-from utils import BitVec256, BitVecVal256, zero8bit, checkBitVecRef256
+from copy import deepcopy,copy
+from z3 import And, Or, Not, BitVecRef, BitVecNumRef, BoolRef, BitVec, BitVecVal, Concat, Extract, simplify, Int, Solver, unsat, sat, ZeroExt, ExprRef
+from utils import BitVec256, BitVecVal256, zero8bit, checkBitVecRef256, dbgredmsg
 from exceptions import DevelopmentErorr, SettingError
+from constant import RUNNING, TERMINATED, RETURNED, CALLABLE
 from collections import defaultdict
 from random import random
 
@@ -29,8 +30,7 @@ class Stack:
         return BitVec256('stackVar{}-{}'.format(self.__blockNumber, self.__numStackVar))
 
     def push(self, w:BitVecRef):
-        if len(self.__stackdata) < 1023:
-            print('push',w,'stack id = ',id(self))
+        if len(self.__stackdata) < 1024:
             self.__stackdata.append(checkBitVecRef256(w))
             # self.__stackdata.append(w)
         else:
@@ -84,7 +84,7 @@ class Memory:
         self.__immediate_data = [] if immediate_data is None else immediate_data
         self.__numMemoryVar = num_memory_var
 
-    def duplicate(self, new_block_number:int=None):
+    def duplicate(self, new_block_number: int=None):
         if new_block_number is None:
             new_block_number = self.__blockNumber
         return Memory(new_block_number, deepcopy(self.__immediate_data), self.__numMemoryVar)
@@ -94,10 +94,10 @@ class Memory:
         return BitVec256('memoryVar{}-{}'.format(self.__blockNumber, self.__numMemoryVar))
 
     def mstore(self, offset: BitVecNumRef, value: BitVecRef):
-        if type(offset) != BitVecNumRef:
+        if not isinstance(offset, BitVecNumRef) and not isinstance(offset, int):
             raise DevelopmentErorr('Does not support memory operations indexed by symbol variables.')
 
-        offset = checkBitVecRef256(offset).as_long()
+        offset = offset.as_long() if isinstance(offset, BitVecNumRef) else offset
         checkBitVecRef256(value)
 
         if offset + WORDBYTESIZE > len(self.__immediate_data):
@@ -124,7 +124,6 @@ class Memory:
         if offset >= len(self.__immediate_data):
             d = offset - len(self.__immediate_data) + 1
             self.__immediate_data.extend([zero8bit() for _ in range(d)])
-
         self.__immediate_data[offset] = simplify(Extract(7, 0, value))
 
     def mload(self, offset: BitVecNumRef):
@@ -149,6 +148,7 @@ class Memory:
             return simplify(
                 Concat(self.__immediate_data[offset: WORDBYTESIZE+offset]))
 
+
     def size(self):
         return len(self.__immediate_data)
 
@@ -165,11 +165,13 @@ class MsgData(Memory):
         self.__numMemoryVar += 1
         return BitVec256('MsgData{}-{}'.format(self.__blockNumber, self.__numMemoryVar))
 
-    def set_function_id(self, fid:str = None):
+    def set_function_id(self, fid:BitVecRef = None):
         if isinstance(fid, str) and len(fid) == 8:
-            fid = BitVec(int(fid, 16), 32)
+            fid = BitVecVal(int(fid, 16), 32)
         elif isinstance(fid, int):
-            fid = BitVec(fid, 32)
+            fid = BitVecVal(fid, 32)
+        elif isinstance(fid, BitVecRef) and fid.size() == 32:
+            pass
         elif fid is None:
             fid = BitVec('function_id', 32)
         else:
@@ -177,7 +179,12 @@ class MsgData(Memory):
 
         for i in range(4):
             fragment = Extract(i*8+7, i*8, fid)
-            self.mstore8(i, fragment)
+            self.mstore8(3-i, fragment)
+
+    def set_arguments(self, num):
+        offset = self.size()
+        for i in range(num):
+            self.mstore8(offset+i,BitVec('msg_data_'+str(i),8))
 
 
 class Storage:
@@ -186,16 +193,16 @@ class Storage:
         self.__storage_data = {} if storage_data is None else storage_data
         self.__num_storage_var = num_storage_var
 
-    def __generate_storage_var(self):
-        self.__num_storage_var += 1
-        return BitVec256('storageVar{}-{}'.format(self.__block_number, self.__num_storage_var))
+    def __generate_storage_var(self, key):
+        # self.__num_storage_var += 1
+        return BitVec256('storageVar_key='+str(key))
 
     def sload(self, key: BitVecRef) -> BitVecRef:
         key = str(checkBitVecRef256(key))
         if key in self.__storage_data.keys():
             return self.__storage_data[key]
         else:
-            newvar = self.__generate_storage_var()
+            newvar = self.__generate_storage_var(key)
             self.__storage_data[key] = newvar
             return newvar
 
@@ -217,10 +224,14 @@ class Storage:
         for k,v in self.__storage_data.items():
             print('key={}, value={}'.format(k, v))
 
+    def get_data(self):
+        return self.__storage_data
 
-# TODO return data
-class Returndata():
+
+
+class Returndata(Memory):
     pass
+
 
 
 # TODO call data
@@ -326,7 +337,8 @@ class BlockHeader:
 
 class ExecutionEnvironment:
     def __init__(self,
-                 Ib: str,
+                 exec_env_id=None,
+                 Ib: str='',
                  Ia:BitVecRef = None,
                  Io:BitVecRef = None,
                  Ip:BitVecRef = None,
@@ -336,7 +348,7 @@ class ExecutionEnvironment:
                  IH:dict = None,
                  Ie:int = 0,
                  Iw:bool = True):
-        self.__exec_env_id = id(self)
+        self.__exec_env_id = id(self) if exec_env_id is None else exec_env_id
         self.this_address = BitVec256('Ia_{}'.format(self.__exec_env_id)) if Ia is None else Ia
         self.tx_originator = BitVec256('Io_{}'.format(self.__exec_env_id)) if Io is None else Io
         self.gasprice = BitVec256('Ip_{}'.format(self.__exec_env_id)) if Ip is None else Ip
@@ -377,8 +389,11 @@ class MachineState:
         memory=None,
         stack=None,
         storage=None,
-        gas = None
-        # returndata=Returndata(),
+        gas = None,
+        retOffset = -1,
+        retLength = -1,
+        balance = None,
+        returndata=None
         # calldata=Calldata()
         ):
         self.pc = pc
@@ -386,6 +401,11 @@ class MachineState:
         self.stack = Stack() if stack is None else stack
         self.storage = Storage() if storage is None else storage
         self.gas = BitVec256('gas_available{}'.format(id(self))) if gas is None else gas
+        self.retOffset = retOffset
+        self.retLength = retLength
+        self.balance = BitVec256('default_balance') if balance is None else balance
+        self.returndata = Returndata() if returndata is None else returndata
+
         # self.returndata = returndata
         # self.calldata = calldata
 
@@ -394,7 +414,11 @@ class MachineState:
             self.pc,
             self.memory.duplicate(new_block_number),
             self.stack.duplicate(new_block_number),
-            self.storage.duplicate(new_block_number)
+            self.storage.duplicate(new_block_number),
+            retOffset=self.retOffset,
+            retLength=self.retLength,
+            balance=self.balance,
+            returndata=self.returndata.duplicate(new_block_number)
         )
 
     def get_pc(self):
@@ -415,6 +439,9 @@ class MachineState:
     def set_stack(self, stack:Stack):
         self.stack = stack
 
+    def set_storage(self, storage:Storage):
+        self.storage = storage
+
     def get_storage(self):
         return self.storage
 
@@ -423,6 +450,30 @@ class MachineState:
 
     def set_gas(self, _gas):
         self.gas = _gas
+
+    def set_retOffset(self, retOffset):
+        self.retOffset = retOffset
+
+    def get_retOffset(self) -> int:
+        return self.retOffset
+
+    def set_retLength(self, retLength):
+        self.retLength = retLength
+
+    def get_retLength(self) -> int:
+        return self.retLength
+
+    def get_return_data(self) -> Returndata:
+        return self.returndata
+
+    def set_return_data(self, returndate: Returndata):
+        self.returndata = returndate
+
+    def get_balance(self):
+        return self.balance
+
+    def set_balance(self, balance):
+        self.balance = balance
 
     def show_all(self):
         print('----stack----')
@@ -451,7 +502,11 @@ class BasicBlock:
                  cond_exp_for_JUMP = False,
                  dfs_stack=None,
                  call_stack=None,
-                 jumpdest=-1):
+                 jumpdest=-1,
+                 path_location: list = None,
+                 block_state: set = None,
+                 depth: int = 0,
+                 ):
 
         #self.account_number = account_number
         self.block_number = block_number
@@ -466,6 +521,10 @@ class BasicBlock:
         self.call_stack = [] if call_stack is None else call_stack
         self.__jumpdest = jumpdest
         self.jumpflag = False
+        self.path_location = None if path_location is None else path_location
+        self.block_state = [RUNNING] if block_state is None else block_state
+        self.depth = depth
+
 
     def get_block_number(self):
         return self.block_number
@@ -478,7 +537,10 @@ class BasicBlock:
         for i,op  in self.mnemonics:
             retstr += '0x{0:04x} '.format(i) + op + '\\l'
             if op == 'STOP' or op == 'INVALID' or op == 'RETURN' or op == 'REVERT':
-                retstr += 'path condition: ' + str(simplify(self.path_condition)) + '\\n'
+                retstr += 'path condition: ' + str(
+                    simplify(self.path_condition) if isinstance(self.path_condition, ExprRef)
+                    else self.path_condition
+                ) + '\\n'
         return retstr
 
     def duplicate(self,
@@ -486,7 +548,7 @@ class BasicBlock:
                   new_block_number: int,
                   machine_state:MachineState = None,
                   exec_env:ExecutionEnvironment = None,
-                  dfs_stack = None):
+                  dfs_stack = None) -> BasicBlock:
         return BasicBlock(block_number=new_block_number,
                           machine_state=self.__machine_state.duplicate(new_block_number) if machine_state is None else machine_state,
                           # TODO 不変なのでコピーする必要はないはず
@@ -494,8 +556,12 @@ class BasicBlock:
                           # deepcopy(self.mnemonics),
                           path_condition=deepcopy(self.path_condition),
                           cond_exp_for_JUMP=deepcopy(self.cond_exp_for_JUMP),
-                          dfs_stack=deepcopy(self.dfs_stack) if dfs_stack is None else dfs_stack,
-                          call_stack=deepcopy(self.call_stack),
+                          # TODO check 1
+                          dfs_stack=copy(self.dfs_stack) if dfs_stack is None else dfs_stack,
+                          call_stack=copy(self.call_stack),
+                          path_location=self.path_condition,
+                          block_state=copy(self.block_state),
+                          depth=self.depth
                           )
 
     def inherit(self,
@@ -519,7 +585,8 @@ class BasicBlock:
         self.dfs_stack.append(block)
 
     def pop_dfs_stack(self) -> BasicBlock:
-        return self.dfs_stack.pop()
+        b = self.dfs_stack.pop()
+        return b
 
     def get_dfs_stack_size(self) -> int:
         return len(self.dfs_stack)
@@ -555,7 +622,6 @@ class BasicBlock:
         return self.__exec_env
 
     def set_jumpdest(self, dest):
-        print(dest,type(dest))
         if isinstance(dest,str):
             self.__jumpdest = int(dest, 16)
         elif isinstance(dest,BitVecNumRef):
@@ -578,10 +644,11 @@ class BasicBlock:
     def add_constraint_to_path_condition(self, constraint: BoolRef):
         self.path_condition = simplify(And(self.path_condition, constraint))
 
-    def integrate_path_condition(self, constraint: BoolRef):
-        self.path_condition = simplify(
-            Or(self.path_condition, constraint)
-        )
+    def get_path_condition(self) -> BoolRef:
+        return self.path_condition
+
+    def set_path_condition(self, condition: BoolRef):
+        self.path_condition = condition
 
     def get_path_condition(self):
         return self.path_condition
@@ -597,5 +664,14 @@ class BasicBlock:
 
     def get_machine_state(self) -> MachineState:
         return self.__machine_state
+
+    def add_block_state(self, state: str):
+        self.block_state.append(state)
+
+    def get_block_state(self) -> list:
+        return self.block_state
+
+    def get_depth(self):
+        return self.depth
 
 

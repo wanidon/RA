@@ -1,6 +1,7 @@
-from z3 import BitVecRef, BitVecNumRef, BitVec, BitVecVal, BitVecVal, BV2Int, simplify
+from z3 import BitVecRef, BitVecNumRef, BitVec, BitVecVal, BitVecVal, BV2Int, simplify, If
 from exceptions import NotBitVecRef256Erorr, NotBitVecNumRef256Erorr
 from math import copysign
+from sys import stderr
 
 def BitVec256(name) -> BitVecRef:
     return BitVec(name,256)
@@ -48,6 +49,11 @@ def pdbg(*somthing):
 
 def bv_to_signed_int(x):
     return simplify(If(x < 0, BV2Int(x) - 2 ** x.size(), BV2Int(x)))
+
+def dbgredmsg(*something):
+    stderr.write(' '.join([str(d) for d in something])+'\n')
+
+
 
 
 if __name__ == '__main__':
