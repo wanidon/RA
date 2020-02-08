@@ -1,15 +1,16 @@
 from data_structures import Stack, Memory, MsgData, Storage, Returndata, ExecutionEnvironment, WorldState, MachineState, BasicBlock, Account
 from control_flow_manager import ControlFlowManager
 from z3 import BV2Int, Int2BV, And, Or, Xor, Not, If, BitVecRef, BitVecNumRef, BitVecVal, BitVec,  Concat, Extract, simplify, Solver, sat, unsat, UDiv, URem, Concat, AstRef, LShR, ZeroExt
-from utils import BitVec256, BitVecVal256, pdbg, sign, BitVecOne256, BitVecZero256, bv_to_signed_int, dbgredmsg
+from utils import *
 from collections import defaultdict
 from fee_schedule import c
 from exceptions import DevelopmentErorr
 from vulnerability_verifier import VulnerabilityVerifier
 from constant import RUNNING, TERMINATED, RETURNED, CALLABLE
+import time_measurement
 
-
-from copy import deepcopy
+from time import time
+from copy import deepcopy, copy
 from sha3 import keccak_256 # this needs pysha3
 import subprocess
 import sys
@@ -18,6 +19,8 @@ import sys
 
 WORDBITSIZE = 256
 WORDBYTESIZE = WORDBITSIZE // 8
+
+
 
 class VM():
     def __init__(self, world_state: WorldState):
@@ -30,13 +33,13 @@ class VM():
         self.vulnerability_verifier = VulnerabilityVerifier()
         # self.exec_env_num = 0
 
-    def add_primary_contract(self, bytecode: str):
-        addr = self.σ.add_account(bytecode)
+    def add_primary_contract(self, bytecode: str, addr:BitVecNumRef = None):
+        addr = self.σ.add_account(bytecode, addr)
         self.primary_contracts.append(addr)
         return addr
 
-    def add_secondary_contract(self, bytecode:str):
-        self.secondary_contract = self.σ.add_account(bytecode)
+    def add_secondary_contract(self, bytecode:str, addr:BitVecNumRef = None):
+        self.secondary_contract = self.σ.add_account(bytecode, addr)
 
     def add_tertiary_contract(self, bytecodes:list):
         for b in bytecodes:
@@ -62,8 +65,114 @@ class VM():
         block = BasicBlock(block_number=0, machine_state=µ, exec_env=I)
         self.cfmanager.set_procesisng_block(block)
 
+    def verify_create_based_re_entrancy(self, verifier = None):
 
-    def verify(self):
+        if verifier is not None:
+            self.vulnerability_verifier = verifier
+        #while self.primary_contract_index < len(self.primary_contracts):
+        while self.primary_contract_index < 1:
+
+            preserved_accounts = copy(self.σ.accounts)
+            dbgredmsg(self.primary_contract_index)
+            self.vulnerability_verifier.set_extracting_fid()
+            self.cfmanager = ControlFlowManager()
+            contract = self.primary_contracts[self.primary_contract_index]
+            # msg_sender = BitVecVal(0x11, 8)
+            # for i in range(19):
+            #     msg_sender = Concat(msg_sender,BitVecVal(0x11, 8))
+            # for i in range(12):
+            #     msg_sender = Concat(BitVecVal(0, 8), msg_sender)
+
+            msg_sender = BitVecVal(0x1111111111111111111111111111111111111111,256)
+            self.init_state(contract,
+                            msg_sender=msg_sender,
+                            )
+            #self.get_machine_state().set_balance(BitVecVal(0xff, 256))
+
+            self.get_exec_env().get_msg_data().set_function_id()
+            self.get_exec_env().get_msg_data().set_concrete_arguments(BitVecVal(0xff, 256))
+            self.run()
+
+            name, cfg = self.cfmanager.gen_CFG()
+            name = 'CFG-no-specified-fid'
+            with open(name + '.dot', 'w') as f:
+                f.write(cfg)
+            subprocess.call(['dot', '-T', 'png', name + '.dot', '-o', name + '.png'])
+            print('callable fids=', self.vulnerability_verifier.get_callable_function_ids())
+            print('fids=', self.vulnerability_verifier.get_function_ids())
+
+
+            for x in self.vulnerability_verifier.callable_function_ids:
+                # sys.stderr.write('independent execution: x\n')
+                self.σ.accounts = copy(preserved_accounts)
+                self.vulnerability_verifier.set_executing_caller()
+                self.cfmanager = ControlFlowManager()
+                self.init_state(addr=contract, exec_env_id=x.as_long(), msg_sender=msg_sender)
+                self.get_exec_env().get_msg_data().set_function_id(x)
+                self.get_exec_env().get_msg_data().set_concrete_arguments(BitVecVal(0xff, 256))
+                #self.get_machine_state().set_balance(BitVecVal(0xff, 256))
+                self.run()
+
+                caller_state = deepcopy(self.vulnerability_verifier.get_caller_state())
+                balance = caller_state.get_data()['BALANCE']
+                condition = deepcopy(caller_state.get_data()['PATH_CONDITION'])
+
+                #for y in self.vulnerability_verifier.callable_function_ids:
+                for y in self.vulnerability_verifier.function_ids:
+
+                    #self.σ.accounts = copy(preserved_accounts)
+                    self.vulnerability_verifier.init_states()
+                    # dbgredmsg('independent execution: y')
+
+                    self.vulnerability_verifier.set_executing_callee()
+                    self.cfmanager = ControlFlowManager()
+                    self.init_state(addr=contract, exec_env_id=y.as_long(),
+                                    storage=caller_state, balance=balance, msg_sender=msg_sender)
+                    self.get_processing_block().set_path_condition(condition)
+                    self.get_exec_env().get_msg_data().set_function_id(y)
+                    self.vulnerability_verifier.set_first_call(True)
+                    self.get_exec_env().get_msg_data().set_concrete_arguments(BitVecVal(0xff, 256))
+                    self.run()
+                    # dbgredmsg('vulnerability_verifier.independently_executed_state')
+
+                    # ここからcross-function
+
+                    dbgredmsg('start cross-function execution')
+                    self.vulnerability_verifier.set_x(x)
+                    self.vulnerability_verifier.set_y(y)
+                    self.vulnerability_verifier.set_first_call(True)
+                    self.vulnerability_verifier.set_second_call(True)
+                    self.vulnerability_verifier.set_third_call(True)
+                    self.vulnerability_verifier.set_executing_cross_function()
+                    self.cfmanager = ControlFlowManager()
+                    self.init_state(addr=contract, exec_env_id=x.as_long(), msg_sender=msg_sender)
+                    self.get_exec_env().get_msg_data().set_function_id(x)
+                    self.get_exec_env().get_msg_data().set_concrete_arguments(BitVecVal(0xff, 256))
+                    #self.get_machine_state().set_balance(BitVecVal(0xff, 256))
+                    self.σ.accounts = copy(preserved_accounts)
+                    self.run()
+                    # dbgredmsg('vulnerability_verifier.cross_called_executed_state')
+                    dbgredmsg('x=', x, 'y=', y)
+                    dbgredmsg('vulnerable:', self.vulnerability_verifier.diff_states())
+
+                    name, cfg = self.cfmanager.gen_CFG()
+                    name = 'CFG-{}-{}'.format(x, y)
+                    with open(name + '-state.txt', 'w') as f:
+                        f.write(str(self.vulnerability_verifier.independently_executed_state) + '\n' + str(
+                            self.vulnerability_verifier.cross_called_executed_state))
+                    with open(name + '.dot', 'w') as f:
+                        f.write(cfg)
+                    subprocess.call(['dot', '-T', 'png', name + '.dot', '-o', name + '.png'])
+
+
+            self.primary_contract_index += 1
+
+
+
+    def verify_cross_function_re_entrancy(self, verifier = None):
+
+        if verifier is not None:
+            self.vulnerability_verifier = verifier
         while self.primary_contract_index < len(self.primary_contracts):
             self.vulnerability_verifier.set_extracting_fid()
 
@@ -72,7 +181,7 @@ class VM():
             contract = self.primary_contracts[self.primary_contract_index]
             self.init_state(contract)
             self.get_exec_env().get_msg_data().set_function_id()
-            self.get_exec_env().get_msg_data().set_arguments(256)
+            self.get_exec_env().get_msg_data().set_arguments(1024)
             self.run()
 
             name, cfg = self.cfmanager.gen_CFG()
@@ -98,13 +207,15 @@ class VM():
                 self.cfmanager = ControlFlowManager()
                 self.init_state(addr=contract,exec_env_id=x.as_long(),msg_sender=ZeroExt(96,BitVec('address1', 160)))
                 self.get_exec_env().get_msg_data().set_function_id(x)
-                self.get_exec_env().get_msg_data().set_arguments(256)
+                self.get_exec_env().get_msg_data().set_arguments(1024)
                 self.run()
 
-                caller_state = self.vulnerability_verifier.get_caller_state()
+                caller_state = deepcopy(self.vulnerability_verifier.get_caller_state())
                 balance = caller_state.get_data()['BALANCE']
+                condition = deepcopy(caller_state.get_data()['PATH_CONDITION'])
 
-                for y in self.vulnerability_verifier.callable_function_ids:
+                # for y in self.vulnerability_verifier.callable_function_ids:
+                for y in self.vulnerability_verifier.function_ids:
                     self.vulnerability_verifier.init_states()
                     # dbgredmsg('independent execution: y')
 
@@ -112,8 +223,10 @@ class VM():
                     self.cfmanager = ControlFlowManager()
                     self.init_state(addr=contract,exec_env_id=y.as_long(),
                                     storage=caller_state,balance=balance,msg_sender=ZeroExt(96,BitVec('address1', 160)))
+                    self.get_processing_block().set_path_condition(condition)
                     self.get_exec_env().get_msg_data().set_function_id(y)
-                    self.get_exec_env().get_msg_data().set_arguments(256)
+                    # self.vulnerability_verifier.set_first_call(True)
+                    self.get_exec_env().get_msg_data().set_arguments(1024)
                     self.run()
                     # dbgredmsg('vulnerability_verifier.independently_executed_state')
 
@@ -121,16 +234,17 @@ class VM():
 
                     #ここからcross-function
 
-                    # dbgredmsg('start cross-function execution')
+                    dbgredmsg('start cross-function execution')
                     self.vulnerability_verifier.set_x(x)
                     self.vulnerability_verifier.set_y(y)
                     self.vulnerability_verifier.set_first_call(True)
                     self.vulnerability_verifier.set_second_call(True)
+                    self.vulnerability_verifier.set_third_call(True)
                     self.vulnerability_verifier.set_executing_cross_function()
                     self.cfmanager = ControlFlowManager()
-                    self.init_state(addr=contract, exec_env_id=x.as_long(), msg_sender=ZeroExt(96,BitVec('address1', 160)))
+                    self.init_state(addr=contract, exec_env_id=x.as_long(), msg_sender=ZeroExt(96, BitVec('address1', 160)))
                     self.get_exec_env().get_msg_data().set_function_id(x)
-                    self.get_exec_env().get_msg_data().set_arguments(256)
+                    self.get_exec_env().get_msg_data().set_arguments(1024)
                     self.run()
                     # dbgredmsg('vulnerability_verifier.cross_called_executed_state')
                     dbgredmsg('x=', x, 'y=', y)
@@ -164,6 +278,7 @@ class VM():
 
 
 
+
     def run_all(self):
 
         while self.primary_contract_index < len(self.primary_contracts):
@@ -172,7 +287,7 @@ class VM():
             a = self.primary_contracts[self.primary_contract_index]
             self.init_state(a)
             self.get_exec_env().get_msg_data().set_function_id()
-            self.get_exec_env().get_msg_data().set_arguments(256)
+            self.get_exec_env().get_msg_data().set_arguments(1024)
             self.run()
             name, cfg = self.cfmanager.gen_CFG()
 
@@ -181,7 +296,7 @@ class VM():
             with open(name + '.dot', 'w') as f:
                 f.write(cfg)
             self.primary_contract_index += 1
-            self.show_vm_state()
+            #self.show_vm_state()
             subprocess.call(['dot', '-T', 'png', name+'.dot', '-o', name+'.png'])
 
 
@@ -298,7 +413,7 @@ class VM():
             return condition
 
     def branch(self, continuable, jumpable, condition):
-        self.cfmanager.inherit_from_processing_block(continuable, jumpable, condition)
+        return self.cfmanager.inherit_from_processing_block(continuable, jumpable, condition)
 
     def external_call(self,
                       exec_env:ExecutionEnvironment
@@ -350,7 +465,7 @@ class VM():
 
             hex_opcode = self.get_byte_from_bytecode()
             mnemonic = self.hex_to_mnemonic(hex_opcode)
-            #print('pc=', self.get_pc(), type(self.get_pc()), mnemonic)
+            # print('pc=', format(self.get_pc(), '04x'), mnemonic,self.get_exec_env().get_exec_env_id())
 
 
             if self.jumped():
@@ -400,7 +515,7 @@ class VM():
             self.get_processing_block().get_block_state(),
             self.get_machine_state().get_storage(),
             self.get_balance(),
-            self.get_processing_block().get_depth()
+            self.get_processing_block().get_depth(),
         )
         return self.cfmanager.rollback_from_dfs_stack()
 
@@ -559,6 +674,7 @@ class VM():
 
 
         d['fe'] = 'INVALID'
+        d['ff'] = 'SELFDESTRUCT'
 
         return d[hex]
 
@@ -589,7 +705,7 @@ class VM():
             'AND': (self.op_and, 2, 1),
             'OR': (self.op_or, 2, 1),
             'XOR': (self.op_xor, 2, 1),
-            'NOT': (self.op_not, 2, 1),
+            'NOT': (self.op_not, 1, 1),
             'BYTE': (self.op_byte, 2, 1),
             'SHL': (self.op_shl, 2, 1),
             'SHR': (self.op_shr, 2, 1),
@@ -611,7 +727,7 @@ class VM():
             'CODECOPY' : (self.op_codecopy, 3, 0),
             'GASPRICE' : (self.op_gasprice, 0, 1),
             'EXTCODESIZE': (self.op_extcodesize, 1, 1),
-            'EXTCODECOPY': (self.op_extcodecopy, 3 ,0),
+            'EXTCODECOPY': (self.op_extcodecopy, 3, 0),
             'RETURNDATASIZE': (self.op_returndatasize, 0, 1),
             'RETURNDATACOPY': (self.op_returndatacopy, 3, 0),
 
@@ -727,7 +843,8 @@ class VM():
 
 
 
-            'INVALID': (self.op_invalid, 0, 0)  # TODO implement exceptional halting
+            'INVALID': (self.op_invalid, 0, 0),  # TODO implement exceptional halting
+            'SELFDESTRUCT': (self.op_selfdestruct, 1, 0)
 
         }
         return d[mnemonic]
@@ -736,7 +853,7 @@ class VM():
 
     def op_stop(self, s):
 
-        if self.cfmanager.rollback_from_call_stack():
+        if self.cfmanager.rollback_from_call_stack(self.vulnerability_verifier):
             # when the external call was caused by CREATE
             prevpc = self.get_processing_block().get_pc() - 1
             if self.get_processing_block().get_exec_env().get_code()[prevpc * 2:prevpc * 2 + 2] == 'f0':
@@ -1028,8 +1145,10 @@ class VM():
         self.increment_pc()
 
     def op_extcodesize(self, s):
-        addr = str(simplify(s[0] % 2**160))
-        self.push_to_stack(BitVecVal256(len(self.σ.get_account(addr).get_bytecode())))
+        #addr = str(simplify(s[0] % 2**160))
+        addr = str(simplify(s[0]))
+        self.push_to_stack(BitVecVal256(len(self.σ.get_account(addr).get_bytecode())//2))
+        self.increment_pc()
 
     def op_extcodecopy(self, s):
         addr = s[0] % 2**160
@@ -1150,22 +1269,13 @@ class VM():
         if type(condition) == BitVecRef:
             condition = condition != 0
 
-        s = Solver()
-        s.push()
         # ジャンプ可能か
-        s.append(condition)
-
-        jumpable = s.check() == sat
-
-
-
-        s.pop()
+        jumpable = solve_and_time(condition)
         # 継続可能か
-        s.append(Not(condition))
+        continuable = solve_and_time(Not(condition))
 
-        continuable = s.check() == sat
-
-        self.branch(continuable, jumpable, condition)
+        if not self.branch(continuable, jumpable, condition):
+            self.op_stop(s)
 
     def op_pc(self, s):
         self.push_to_stack(self.get_machine_state().get_pc())
@@ -1223,11 +1333,14 @@ class VM():
         offset = s[1].as_long()
         length = s[2].as_long()
         new_code = ''
+        import sys
         for i in range(length):
             op = self.get_machine_state().get_memory().get_one_byte(offset+i)
-            if not isinstance(op, BitVecNumRef):
+
+            if (not isinstance(op, BitVecNumRef)) and (not isinstance(simplify(op),BitVecNumRef)):
                 raise DevelopmentErorr('illegal parameter given to CREATE')
-            new_code += format(op.as_long(), '02x')
+            else:
+                new_code += format(simplify(op).as_long(), '02x')
 
         self.set_balance(self.get_balance() - s[0])
         # generate new execution environment
@@ -1292,15 +1405,27 @@ class VM():
 
 
 
+        self.vulnerability_verifier.extract_data_before_call(
+            self.get_processing_block().get_path_condition(),
+            self.get_processing_block().get_block_state(),
+            self.get_machine_state().get_storage(),
+            self.get_machine_state().get_balance(),
+            self.get_processing_block().get_depth(),
+        )
+
+
         if self.vulnerability_verifier.is_first_call():
             addr = self.secondary_contract
-            fid = BitVecZero256()
+            fid = BitVecVal(0, 32)
             #TODO:returndata
         elif self.vulnerability_verifier.is_second_call():
             addr = self.primary_contracts[self.primary_contract_index]
             fid = self.vulnerability_verifier.get_y()
             msg_data.set_function_id(fid)
-            msg_data.set_arguments(256)
+            #for cross-function
+            msg_data.set_arguments(1024)
+            #for create-based
+            #msg_data.set_concrete_arguments(BitVecVal(0xff,256))
         else:
             self.push_to_stack(
                 BitVec256('call_succeeds_{}_{}'.format(self.get_exec_env().get_exec_env_id(), self.get_pc() * 2)))
@@ -1318,20 +1443,20 @@ class VM():
 
         if addr is not None :
 
-
-
-            self.external_call(
-                ExecutionEnvironment(
+            exec_env = ExecutionEnvironment(
                     exec_env_id=fid.as_long(),
                     Ia=addr,
                     Ib=self.σ.get_account(str(addr)).get_bytecode(),
                     Is=self.get_address(),
-                    Iv=value,
+                    Iv=None if fid.as_long() == self.vulnerability_verifier.get_y().as_long() else value,#fallbackの想定
                     Id=msg_data
 
 
                 )
-            )
+
+            if fid.as_long() == self.vulnerability_verifier.get_y().as_long():
+                exec_env.set_exec_env_id(id(exec_env))
+            self.external_call(exec_env)
 
 
 
@@ -1351,7 +1476,7 @@ class VM():
 
 
         # extract return data
-        if not(isinstance(s[0],BitVecNumRef) and isinstance(s[1],BitVecNumRef)):
+        if (not(isinstance(s[0],BitVecNumRef)) or (not isinstance(s[1],BitVecNumRef))):
             raise DevelopmentErorr
 
         offset = s[0].as_long()
@@ -1367,7 +1492,7 @@ class VM():
             returndata.append(
                 self.get_machine_state().get_memory().get_one_byte(i))
 
-        next_block = self.cfmanager.rollback_from_call_stack()
+        next_block = self.cfmanager.rollback_from_call_stack(self.vulnerability_verifier)
         if next_block:
 
             self.get_machine_state().set_return_data(
@@ -1402,6 +1527,10 @@ class VM():
     def op_delegatecall(self, s):
         pass
     def op_revert(self, s):
+        # 他に正常終了するルートがあるという前提でcallstackよりdfsstackからのロールバック優先
+        if not self.cfmanager.rollback_from_dfs_stack():
+            return self.cfmanager.rollback_from_call_stack(self.vulnerability_verifier)
+
         # if self.cfmanager.get_processing_block().get_call_stack_size() > 0:
         #     return_block = self.cfmanager.pop_from_call_stack()
         #     # self.cfmanager.add_edge(self.get_processing_block(),return_block)
@@ -1411,10 +1540,13 @@ class VM():
         #         return False
         #     else:
         #         self.cfmanager.rollback_from_dfs_stack()
-        self.op_return(s)
 
     def op_invalid(self,s):
         # TODO 異常終了
         print('op=',self.get_code()[self.get_pc()*2:self.get_pc()*2+2])
+        return False
+
+    def op_selfdestruct(self, s):
+        print(s)
         return False
 

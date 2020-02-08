@@ -1,8 +1,9 @@
-from z3 import BitVecRef, BitVecNumRef, BitVec, BitVecVal, BitVecVal, BV2Int, simplify, If
+from z3 import *
 from exceptions import NotBitVecRef256Erorr, NotBitVecNumRef256Erorr
 from math import copysign
 from sys import stderr
-
+import time_measurement
+from time import perf_counter
 def BitVec256(name) -> BitVecRef:
     return BitVec(name,256)
 
@@ -53,8 +54,29 @@ def bv_to_signed_int(x):
 def dbgredmsg(*something):
     stderr.write(' '.join([str(d) for d in something])+'\n')
 
+def reset_time():
+    time_measurement.exec_time = perf_counter()
+    time_measurement.solving_time = 0
 
+def get_time():
+    return perf_counter() - time_measurement.exec_time, time_measurement.solving_time
 
+def solve_and_time(condition, solver=None):
+    s = Solver() if solver is None else solver
+    s.add(condition)
+    t = perf_counter()
+    r = s.check()
+    time_measurement.solving_time += perf_counter() - t
+    #
+    return r == sat
+
+def get_model_and_time(condition, solver=None):
+    s = Solver() if solver is None else solver
+    s.add(condition)
+    t = perf_counter()
+    r = s.check()
+    time_measurement.solving_time += perf_counter() - t
+    return s.model() if r == sat else False
 
 if __name__ == '__main__':
     test_checkBitVecRef256()

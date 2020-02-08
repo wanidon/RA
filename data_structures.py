@@ -73,7 +73,9 @@ class Stack:
     def show_data(self):
         print('stack_id',id(self),len(self.__stackdata))
         for i in range(len(self.__stackdata))[::-1]:
-            print("{}:{}".format(i, self.__stackdata[i]))
+            # print("{}:{}".format(i, self.__stackdata[i]))
+            d = simplify(self.__stackdata[i])
+            print(i,':',format(d.as_long(), '02x') if isinstance(d,BitVecNumRef) else d)
 
 
 class Memory:
@@ -127,10 +129,11 @@ class Memory:
         self.__immediate_data[offset] = simplify(Extract(7, 0, value))
 
     def mload(self, offset: BitVecNumRef):
-        if type(checkBitVecRef256(offset)) is not BitVecNumRef:
+        if isinstance(offset, BitVecNumRef):
+            offset = offset.as_long()
+        elif not isinstance(offset, int):
             raise DevelopmentErorr('Does not support memory operations indexed by symbol variables.')
 
-        offset = checkBitVecRef256(offset).as_long()
         if offset + WORDBYTESIZE > len(self.__immediate_data):
             # ~ index out of bounds ~
             # generate a symblolic variable
@@ -184,7 +187,13 @@ class MsgData(Memory):
     def set_arguments(self, num):
         offset = self.size()
         for i in range(num):
-            self.mstore8(offset+i,BitVec('msg_data_'+str(i),8))
+            self.mstore8(offset+i,BitVec('msg_data_'+str(i), 8))
+
+    def set_concrete_arguments(self, value: BitVecNumRef):
+        offset = self.size()
+        r = value.size()//8
+        for i in range(r):
+            self.mstore8(offset + i, Extract((r-i-1)*8+7, (r-i-1)*8, value))
 
 
 class Storage:
@@ -195,6 +204,8 @@ class Storage:
 
     def __generate_storage_var(self, key):
         # self.__num_storage_var += 1
+        # for create-based
+        # return BitVecVal256(0xff)
         return BitVec256('storageVar_key='+str(key))
 
     def sload(self, key: BitVecRef) -> BitVecRef:
@@ -271,7 +282,6 @@ class WorldState:
         # アカウント番号とAccount address生成
         new_num = len(self.accounts)
         new_addr = ZeroExt(96,BitVec('address{}'.format(new_num), 160)) if addr is None else addr
-
         # Account生成
         account = Account(bytecode, new_num)
 
@@ -281,7 +291,7 @@ class WorldState:
         return new_addr
 
     def get_account(self, addr: BitVecRef) -> Account:
-        return self.accounts[addr]
+        return self.accounts[str(addr)]
 
     def get_account_num(self, addr:BitVecRef) -> int:
         return self.accounts[addr].get_account_num()
@@ -367,6 +377,9 @@ class ExecutionEnvironment:
 
     def get_exec_env_id(self) -> int:
         return self.__exec_env_id
+    def set_exec_env_id(self, id:int):
+        self.__exec_env_id = id
+
 
     def get_block_header(self) -> BlockHeader:
         return self.block_header
@@ -376,6 +389,12 @@ class ExecutionEnvironment:
 
     def get_msg_data(self) -> MsgData:
         return self.msg_data
+
+    def get_this_address(self) -> BitVecRef:
+        return self.this_address
+
+    def set_this_address(self, address):
+        self.this_address = address
 
     def show_all(self):
         print(self.this_address,self.tx_originator,self.gasprice,
@@ -522,7 +541,7 @@ class BasicBlock:
         self.__jumpdest = jumpdest
         self.jumpflag = False
         self.path_location = None if path_location is None else path_location
-        self.block_state = [RUNNING] if block_state is None else block_state
+        self.block_state = {RUNNING} if block_state is None else block_state
         self.depth = depth
 
 
@@ -536,11 +555,16 @@ class BasicBlock:
         retstr = ''
         for i,op  in self.mnemonics:
             retstr += '0x{0:04x} '.format(i) + op + '\\l'
-            if op == 'STOP' or op == 'INVALID' or op == 'RETURN' or op == 'REVERT':
-                retstr += 'path condition: ' + str(
-                    simplify(self.path_condition) if isinstance(self.path_condition, ExprRef)
-                    else self.path_condition
-                ) + '\\n'
+            # if op == 'STOP' or op == 'INVALID' or op == 'RETURN' or op == 'REVERT':
+            #     retstr += 'path condition: ' + str(
+            #         simplify(self.path_condition) if isinstance(self.path_condition, ExprRef)
+            #         else self.path_condition
+            #     ) + '\\n'
+            # if op == 'STOP' or op == 'INVALID' or op == 'RETURN' or op == 'REVERT':
+            #
+            #     self.get_machine_state().get_memory().mload()
+            #     retstr += 'function id: ' + str() + '\\n'
+
         return retstr
 
     def duplicate(self,
@@ -666,7 +690,7 @@ class BasicBlock:
         return self.__machine_state
 
     def add_block_state(self, state: str):
-        self.block_state.append(state)
+        self.block_state.add(state)
 
     def get_block_state(self) -> list:
         return self.block_state

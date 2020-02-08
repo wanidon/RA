@@ -1,10 +1,11 @@
 from data_structures import BasicBlock, ExecutionEnvironment, Memory, Stack
 from exceptions import DevelopmentErorr
-from z3 import Solver, unsat, Or, Not, BitVecRef, BoolRef, simplify
+from z3 import Solver, unsat, Or, Not, BitVecRef, BoolRef, simplify,sat
 from collections import defaultdict
-from utils import dbgredmsg
-
+from utils import dbgredmsg, solve_and_time
+import time_measurement
 from copy import deepcopy
+from vulnerability_verifier import VulnerabilityVerifierAfterCall
 
 class ControlFlowManager:
     def __init__(self):
@@ -75,9 +76,8 @@ class ControlFlowManager:
             self.integrate_path_condition(constraint, dest)
 
     def inherit_from_processing_block(self, continuable: bool, jumpable: bool, condition):
-        s = Solver()
-        s.push()
-
+        # s = Solver()
+        # s.push()
         if continuable:
             # 先にcontinuation_blockを生成することでブロック番号を若くする
             # Generate a continuation_block first to make the block number younger
@@ -85,14 +85,21 @@ class ControlFlowManager:
             continuation_block.add_constraint_to_path_condition(Not(condition))
             # 到達不能の場合　または　到達済みの場合何もしない
             # nothing to do when unreachable or reached
-            s.add(continuation_block.get_path_condition())
-            if not s.check() == unsat or not\
-                    self.visited_address[self.get_exec_id()][self.processing_block.get_pc()]:
-
+            # s.add(continuation_block.get_path_condition())
+            # st = time()
+            # ck = s.check()
+            # time_measurement.solving_time += time() - st
+            if not self.visited_address[self.get_exec_id()][continuation_block.get_pc()]:
+                # print('visited',
+                #       ck,
+                #       self.visited_address[self.get_exec_id()][continuation_block.get_pc()],
+                #       self.get_processing_block().get_pc())
                 self.basic_blocks.append(continuation_block)
                 self.__edges[self.processing_block].append(continuation_block)
+            else:
+                continuable = False
 
-            s.pop()
+            # s.pop()
 
 
 
@@ -101,13 +108,21 @@ class ControlFlowManager:
                 new_block_number=len(self.basic_blocks),
                 jflag=True)
             jump_block.add_constraint_to_path_condition(condition)
-            s.add(jump_block.get_path_condition())
-            if not s.check() == unsat or \
-                    not self.visited_address[self.get_exec_id()][self.processing_block.get_pc()]:
-
-
+            # s.add(jump_block.get_path_condition())
+            #
+            # st = time()
+            # ck = s.check()
+            # time_measurement.solving_time += time() - st
+            if not self.visited_address[self.get_exec_id()][jump_block.get_pc()]:
+                # print('visited,jumpable?',
+                #       ck,
+                #       self.visited_address[self.get_exec_id()][jump_block.get_pc()],
+                #       self.get_processing_block().get_pc())
+                # print('exec id=',self.get_exec_id())
                 self.basic_blocks.append(jump_block)
                 self.__edges[self.processing_block].append(jump_block)
+            else:
+                jumpable = False
 
 
 
@@ -117,8 +132,12 @@ class ControlFlowManager:
             if jumpable:
                 self.push_to_dfs_stack(jump_block)
 
-        else:
+        elif jumpable:
             self.processing_block = jump_block
+        else:
+            # dbgredmsg(condition)
+            # return False
+            pass
 
         return self.processing_block
 
@@ -238,11 +257,17 @@ class ControlFlowManager:
 
 
 
-    def rollback_from_call_stack(self) -> BasicBlock:
+    def rollback_from_call_stack(self, verifier:VulnerabilityVerifierAfterCall = None) -> BasicBlock:
         if self.is_call_stack_empty():
             return False
         else:
             # print('rollback from call stack')
+            verifier.extract_data_with_callback(self.processing_block.get_path_condition(),
+                                                self.processing_block.get_block_state(),
+                                                self.processing_block.get_machine_state().get_storage(),
+                                                self.processing_block.get_machine_state().get_balance(),
+                                                self.processing_block.get_depth(),
+                                                )
             return_block = self.pop_from_call_stack()
             self.add_edge(self.processing_block, return_block)
             return_block.add_constraint_to_path_condition(self.processing_block.get_path_condition())
@@ -260,6 +285,7 @@ class ControlFlowManager:
             return_block.get_machine_state().set_balance(
                 deepcopy(self.processing_block.get_machine_state().get_balance())
             )
+            return_block.block_state |= self.processing_block.block_state
             # print('balance prev')
             # print(self.processing_block.get_machine_state().get_balance())
             # print('balance next')
@@ -328,7 +354,15 @@ class ControlFlowManager:
             nodedefine += mnemonics[n]
             if jumpdests[n] != -1:
                 nodedefine += 'jumpdest: {0:04x}\n'.format(jumpdests[n])
-            nodedefine += '"];\n'
+
+            nodedefine += '"'
+            if ' CALL\l' == mnemonics[n][-7:] or ' CREATE\l' == mnemonics[n][-9:]:
+                nodedefine += ',color = red'
+            elif (' STOP\l' in mnemonics[n]
+                  or ' RETURN\l' in mnemonics[n]
+                  or ' REVERT\l' in mnemonics[n]) and 'block' + str(n) + ' ->' in edges:
+                nodedefine += ',color = green'
+            nodedefine += '];\n'
 
         cfg = 'digraph ' + self.get_CFG_name() + ' {\n'
         cfg += nodedefine
