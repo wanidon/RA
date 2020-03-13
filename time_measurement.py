@@ -1,2 +1,2 @@
-exec_time = 0
-solving_time = 0
+exec_time = {}
+solving_time = {}

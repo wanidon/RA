@@ -187,7 +187,7 @@ class MsgData(Memory):
     def set_arguments(self, num):
         offset = self.size()
         for i in range(num):
-            self.mstore8(offset+i,BitVec('msg_data_'+str(i), 8))
+            self.mstore(offset+i*32, BitVec256('msg_data_{}'.format(i)))
 
     def set_concrete_arguments(self, value: BitVecNumRef):
         offset = self.size()
@@ -206,7 +206,7 @@ class Storage:
         # self.__num_storage_var += 1
         # for create-based
         # return BitVecVal256(0xff)
-        return BitVec256('storageVar_key='+str(key))
+        return BitVec256('default_storage_'+str(key))
 
     def sload(self, key: BitVecRef) -> BitVecRef:
         key = str(checkBitVecRef256(key))
@@ -256,7 +256,6 @@ class Account:
                  balance: BitVecRef = None,
                  nonce=0):
         self.bytecode = bytecode
-        self.codesize = lambda: len(bytecode)
         self.account_num = account_num
         self.__balance = BitVec256('account_balance_{}'.format(self.account_num)) if balance is None else balance
         self.nonce = nonce
@@ -271,6 +270,8 @@ class Account:
     def get_bytecode(self) -> str:
         return self.bytecode
 
+    def codesize(self) -> int:
+        return len(self.bytecode)
 
 class WorldState:
     def __init__(self):
@@ -356,7 +357,7 @@ class ExecutionEnvironment:
                  Is:BitVecRef = None,
                  Iv:BitVecRef = None,
                  IH:dict = None,
-                 Ie:int = 0,
+                 Ie:int = None,
                  Iw:bool = True):
         self.__exec_env_id = id(self) if exec_env_id is None else exec_env_id
         self.this_address = BitVec256('Ia_{}'.format(self.__exec_env_id)) if Ia is None else Ia
@@ -364,11 +365,11 @@ class ExecutionEnvironment:
         self.gasprice = BitVec256('Ip_{}'.format(self.__exec_env_id)) if Ip is None else Ip
         self.msg_data = MsgData(self.__exec_env_id) if Id is None else Id
         self.msg_sender = BitVec256('Is_{}'.format(self.__exec_env_id)) if Is is None else Is
-        self.msg_value = BitVec256('Iv_{}'.format(self.__exec_env_id)) if Iv is None else Iv
+        self.msg_value = BitVec256('Iv') if Iv is None else Iv
         # TODO
         self.this_code = BitVec256('Ib_{}'.format(self.__exec_env_id)) if Ib is None else Ib
         self.block_header = BlockHeader() if IH is None else IH # TODO: blockheader IH
-        self.depth_of_call = Ie
+        self.depth_of_call = 0 if Ie is None else Ie
         self.permission_to_change_state = Iw
         #self.accounts = []
     # about Iw: https://ethereum.stackexchange.com/questions/49210/execution-environment-variables-iw-and-ie
@@ -492,7 +493,7 @@ class MachineState:
         return self.balance
 
     def set_balance(self, balance):
-        self.balance = balance
+        self.balance = simplify(balance)
 
     def show_all(self):
         print('----stack----')
@@ -519,12 +520,13 @@ class BasicBlock:
                  mnemonics: list = None,
                  path_condition = True,
                  cond_exp_for_JUMP = False,
-                 dfs_stack=None,
+                 # dfs_stack=None,
                  call_stack=None,
                  jumpdest=-1,
-                 path_location: list = None,
+                 #path_location: list = None,
                  block_state: set = None,
                  depth: int = 0,
+                 path = None,
                  ):
 
         #self.account_number = account_number
@@ -536,13 +538,14 @@ class BasicBlock:
         self.mnemonics = [] if mnemonics is None else mnemonics
         self.path_condition = path_condition
         self.cond_exp_for_JUMP = cond_exp_for_JUMP
-        self.dfs_stack = [] if dfs_stack is None else dfs_stack
+        # self.dfs_stack = [] if dfs_stack is None else dfs_stack
         self.call_stack = [] if call_stack is None else call_stack
         self.__jumpdest = jumpdest
         self.jumpflag = False
-        self.path_location = None if path_location is None else path_location
+        #self.path_location = None if path_location is None else path_location
         self.block_state = {RUNNING} if block_state is None else block_state
         self.depth = depth
+        self.path = set() if path is None else path
 
 
     def get_block_number(self):
@@ -572,7 +575,8 @@ class BasicBlock:
                   new_block_number: int,
                   machine_state:MachineState = None,
                   exec_env:ExecutionEnvironment = None,
-                  dfs_stack = None) -> BasicBlock:
+                  # dfs_stack = None,
+                  depth = None) -> BasicBlock:
         return BasicBlock(block_number=new_block_number,
                           machine_state=self.__machine_state.duplicate(new_block_number) if machine_state is None else machine_state,
                           # TODO 不変なのでコピーする必要はないはず
@@ -581,18 +585,21 @@ class BasicBlock:
                           path_condition=deepcopy(self.path_condition),
                           cond_exp_for_JUMP=deepcopy(self.cond_exp_for_JUMP),
                           # TODO check 1
-                          dfs_stack=copy(self.dfs_stack) if dfs_stack is None else dfs_stack,
-                          call_stack=copy(self.call_stack),
-                          path_location=self.path_condition,
+                          # dfs_stack=self.dfs_stack if dfs_stack is None else dfs_stack,
+                          call_stack=deepcopy(self.call_stack),
+                          #path_location=self.path_condition,
                           block_state=copy(self.block_state),
-                          depth=self.depth
+                          depth=self.depth if depth is None else depth,
+                          path=copy(self.path)
                           )
 
     def inherit(self,
                 new_block_number: int,
-                jflag: bool = False):
-        block = self.duplicate(new_block_number=new_block_number)
+                jflag: bool = False,
+                depth=None) -> BasicBlock:
+        block = self.duplicate(new_block_number=new_block_number,depth=self.depth+1)
         # When a new block is reached by jump
+
         if jflag:
             block.set_pc(self.get_jumpdest())
             block.jumpflag = True
@@ -605,18 +612,18 @@ class BasicBlock:
         self.mnemonics = []
         self.__jumpdest = -1
 
-    def push_dfs_stack(self, block:BasicBlock):
-        self.dfs_stack.append(block)
+    # def push_dfs_stack(self, block:BasicBlock):
+    #     self.dfs_stack.append(block)
+    #
+    # def pop_dfs_stack(self) -> BasicBlock:
+    #     b = self.dfs_stack.pop()
+    #     return b
 
-    def pop_dfs_stack(self) -> BasicBlock:
-        b = self.dfs_stack.pop()
-        return b
+    # def get_dfs_stack_size(self) -> int:
+    #     return len(self.dfs_stack)
 
-    def get_dfs_stack_size(self) -> int:
-        return len(self.dfs_stack)
-
-    def show_dfs_stack(self):
-        print(self.dfs_stack)
+    # def show_dfs_stack(self):
+    #     print(self.dfs_stack)
 
     def push_call_stack(self, block:BasicBlock):
         self.call_stack.append(block)
@@ -674,9 +681,6 @@ class BasicBlock:
     def set_path_condition(self, condition: BoolRef):
         self.path_condition = condition
 
-    def get_path_condition(self):
-        return self.path_condition
-
     def set_cond_exp_for_JUMP(self, constraint):
         self.cond_exp_for_JUMP = constraint
 
@@ -697,5 +701,16 @@ class BasicBlock:
 
     def get_depth(self):
         return self.depth
+
+    def get_path(self) -> str:
+        return str(self.path)
+
+    def add_path(self, exec_env_id, depth_of_call, pc: int, jumped: bool):
+        self.path.add((str(exec_env_id), str(depth_of_call), pc, jumped))
+        # print('path added,',(str(exec_env_id), str(depth_of_call), pc, jumped))
+        # print(self.get_path())
+
+    def unite_path(self, block:BasicBlock):
+        self.path |= block.path
 
 

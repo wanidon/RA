@@ -14,11 +14,190 @@ from copy import deepcopy, copy
 from sha3 import keccak_256 # this needs pysha3
 import subprocess
 import sys
-
+from multiprocessing import Pool, Process, cpu_count
 
 
 WORDBITSIZE = 256
 WORDBYTESIZE = WORDBITSIZE // 8
+
+
+def v(arg):
+    reset_time()
+    x, y, contract = arg
+    x = BitVecVal(x,32)
+    y = BitVecVal(y,32)
+    print('hoge')
+    vm = VM(WorldState())
+    contract = vm.add_primary_contract(contract)
+    secondary_contract = '600080600481803362fffffff100'
+    vm.add_secondary_contract(secondary_contract)
+    vm.cfmanager = ControlFlowManager()
+    # self.σ.accounts = copy(preserved_accounts)
+    vm.vulnerability_verifier.init_states()
+    block_y = vm.init_state(addr=contract, exec_env_id=y,
+                              msg_sender=ZeroExt(96, BitVec('address1', 160)))
+    vm.get_exec_env().get_msg_data().set_function_id(y)
+    vm.get_exec_env().get_msg_data().set_arguments(1000)
+    vm.cfmanager.basic_blocks.pop()
+    block_x = vm.init_state(addr=contract, exec_env_id=x, depth_of_call=2,
+                              msg_sender=ZeroExt(96, BitVec('address1', 160))
+                              )
+    block_x.block_number = 1
+    vm.cfmanager.basic_blocks.append(block_y)
+    vm.get_exec_env().get_msg_data().set_function_id(x)
+    # self.get_exec_env().get_msg_data().set_concrete_arguments(BitVecVal(0xff, 256))
+    vm.get_exec_env().get_msg_data().set_arguments(1000)
+    vm.get_processing_block().call_stack.append(block_y)
+
+    vm.vulnerability_verifier.set_executing_callee()
+    # self.get_machine_state().set_balance(BitVecVal(0xff, 256))
+
+    vm.vulnerability_verifier.set_first_call(False)
+    vm.vulnerability_verifier.set_second_call(False)
+    vm.vulnerability_verifier.set_third_call(False)
+    vm.run()
+
+    name, cfg = vm.cfmanager.gen_CFG()
+    name = 'CFG-{}-{}-independent'.format(x, y)
+    with open(name + '.txt', 'w') as f:
+        f.write(str(vm.vulnerability_verifier.independently_executed_state) + '\n' + str(
+            vm.vulnerability_verifier.cross_called_executed_state))
+    with open(name + '.dot', 'w') as f:
+        f.write(cfg)
+    subprocess.call(['dot', '-T', 'png', name + '.dot', '-o', name + '.png'])
+
+
+
+
+
+
+
+    vm.vulnerability_verifier.set_x(x)
+    vm.vulnerability_verifier.set_y(y)
+    vm.vulnerability_verifier.set_first_call(True)
+    vm.vulnerability_verifier.set_second_call(True)
+    vm.vulnerability_verifier.set_third_call(True)
+    vm.vulnerability_verifier.set_executing_cross_function()
+    vm.cfmanager = ControlFlowManager()
+    vm.init_state(addr=contract, exec_env_id=x,
+                    msg_sender=ZeroExt(96, BitVec('address1', 160))
+                    )
+    vm.get_exec_env().get_msg_data().set_function_id(x)
+    vm.get_exec_env().get_msg_data().set_arguments(1000)
+    vm.run()
+
+    name, cfg = vm.cfmanager.gen_CFG()
+    name = 'CFG-{}-{}'.format(x, y)
+    with open(name + '-state.txt', 'w') as f:
+        f.write(str(vm.vulnerability_verifier.independently_executed_state) + '\n' + str(
+            vm.vulnerability_verifier.cross_called_executed_state))
+    with open(name + '.dot', 'w') as f:
+        f.write(cfg)
+    subprocess.call(['dot', '-T', 'png', name + '.dot', '-o', name + '.png'])
+    e,s = get_time()
+
+    return (hex(x.as_long()), hex(y.as_long()), vm.vulnerability_verifier.diff_states(), s)
+
+
+
+def v2(arg):
+
+    reset_time()
+    x, y, contract = arg
+    x = BitVecVal(x,32)
+    y = BitVecVal(y,32)
+    print('hoge')
+    vm = VM(WorldState())
+    initial_addr = BitVecVal(0x1111111111111111111111111111111111111111, 256)
+    addr = BitVecVal(0x2222222222222222222222222222222222222222, 256)
+    contract = vm.add_primary_contract(contract,addr)
+
+
+    secondary_contract = '600080600481803362fffffff100'
+    vm.add_secondary_contract(secondary_contract,initial_addr)
+
+    preserved_accounts = copy(vm.σ.accounts)
+
+
+
+
+    vm.cfmanager = ControlFlowManager()
+    # self.σ.accounts = copy(preserved_accounts)
+    vm.vulnerability_verifier.init_states()
+    msg_sender = BitVecVal(0x1111111111111111111111111111111111111111, 256)
+    block_y = vm.init_state(addr=contract, exec_env_id=y,
+                              msg_sender=msg_sender)
+    vm.get_exec_env().get_msg_data().set_function_id(y)
+    # vm.get_exec_env().get_msg_data().set_arguments(1000)
+    vm.get_exec_env().get_msg_data().set_concrete_arguments(BitVecVal(0xff, 256))
+    vm.cfmanager.basic_blocks.pop()
+    block_x = vm.init_state(addr=contract, exec_env_id=x, depth_of_call=2,
+                              msg_sender=msg_sender
+                              )
+    block_x.block_number = 1
+    vm.cfmanager.basic_blocks.append(block_y)
+    vm.get_exec_env().get_msg_data().set_function_id(x)
+    vm.get_exec_env().get_msg_data().set_concrete_arguments(BitVecVal(0xff, 256))
+    #vm.get_exec_env().get_msg_data().set_arguments(1000)
+    vm.get_processing_block().call_stack.append(block_y)
+
+    vm.vulnerability_verifier.set_executing_callee()
+    # self.get_machine_state().set_balance(BitVecVal(0xff, 256))
+
+    vm.vulnerability_verifier.set_first_call(False)
+    vm.vulnerability_verifier.set_second_call(False)
+    vm.vulnerability_verifier.set_third_call(False)
+    vm.run()
+
+    name, cfg = vm.cfmanager.gen_CFG()
+    name = 'CFG-{}-{}-independent'.format(x, y)
+    with open(name + '.txt', 'w') as f:
+        f.write(str(vm.vulnerability_verifier.independently_executed_state) + '\n' + str(
+            vm.vulnerability_verifier.cross_called_executed_state))
+    with open(name + '.dot', 'w') as f:
+        f.write(cfg)
+    subprocess.call(['dot', '-T', 'png', name + '.dot', '-o', name + '.png'])
+
+
+
+
+
+    vm.σ.accounts = preserved_accounts
+
+    vm.vulnerability_verifier.set_x(x)
+    vm.vulnerability_verifier.set_y(y)
+    vm.vulnerability_verifier.set_first_call(True)
+    vm.vulnerability_verifier.set_second_call(True)
+    vm.vulnerability_verifier.set_third_call(True)
+    vm.vulnerability_verifier.set_executing_cross_function()
+    vm.cfmanager = ControlFlowManager()
+    vm.init_state(addr=contract, exec_env_id=x,
+                    msg_sender=msg_sender
+                    )
+    vm.get_exec_env().get_msg_data().set_function_id(x)
+    # vm.get_exec_env().get_msg_data().set_arguments(1000)
+    vm.get_exec_env().get_msg_data().set_concrete_arguments(BitVecVal(0xff, 256))
+    vm.run()
+
+    name, cfg = vm.cfmanager.gen_CFG()
+    name = 'CFG-{}-{}'.format(x, y)
+    with open(name + '-state.txt', 'w') as f:
+        f.write(str(vm.vulnerability_verifier.independently_executed_state) + '\n' + str(
+            vm.vulnerability_verifier.cross_called_executed_state))
+    with open(name + '.dot', 'w') as f:
+        f.write(cfg)
+    subprocess.call(['dot', '-T', 'png', name + '.dot', '-o', name + '.png'])
+    e,s = get_time()
+
+    return (hex(x.as_long()), hex(y.as_long()), vm.vulnerability_verifier.diff_states(), s)
+
+
+
+
+
+
+
+
 
 
 
@@ -50,7 +229,8 @@ class VM():
                    storage = None,
                    balance = None,
                    exec_env_id = None,
-                   msg_sender=None):
+                   msg_sender=None,
+                   depth_of_call=0):
 
 
         account = self.σ.accounts[str(addr)]
@@ -60,10 +240,116 @@ class VM():
                                  Ia=addr,
                                  Ib=account.bytecode,
                                  Iv=value,
-                                 Is=msg_sender)
+                                 Is=msg_sender,
+                                 Ie=depth_of_call)
 
         block = BasicBlock(block_number=0, machine_state=µ, exec_env=I)
         self.cfmanager.set_procesisng_block(block)
+        return block
+
+    def verify_full_state(self):
+        sum_solvingtime = 0
+        while self.primary_contract_index < 1:
+            self.cfmanager = ControlFlowManager()
+            self.vulnerability_verifier.set_extracting_fid()
+
+            contract = self.primary_contracts[self.primary_contract_index]
+
+
+            #msg_sender = BitVecVal(0x1111111111111111111111111111111111111111, 256)
+            self.init_state(contract,
+                            # msg_sender=msg_sender,
+                            )
+            # self.get_machine_state().set_balance(BitVecVal(0xff, 256))
+
+            self.get_exec_env().get_msg_data().set_function_id()
+            #self.get_exec_env().get_msg_data().set_concrete_arguments(BitVecVal(0xff, 256))
+            self.get_exec_env().get_msg_data().set_arguments(1000)
+            self.run()
+            print('callable fids=', self.vulnerability_verifier.get_callable_function_ids())
+            print('fids=', self.vulnerability_verifier.get_function_ids())
+            print('num process:',cpu_count() - 2)
+            def multi(num_process, function, X, Y, contract):
+                p = Pool(num_process)  # 最大プロセス数
+                return p.map(function, [(x, y, contract) for x in X for y in Y])
+
+            # result = multi(cpu_count() - 2,
+            #                v,
+            #                [id.as_long() for id in self.vulnerability_verifier.callable_function_ids],
+            #                [id.as_long() for id in self.vulnerability_verifier.function_ids],
+            #                str(self.get_exec_env().this_code),)
+            def single(function,X,Y,contract):
+                return map(function,[(x, y, contract) for x in X for y in Y])
+            result = single(
+            # result = multi(cpu_count() - 2,
+                           v,
+                           [id.as_long() for id in self.vulnerability_verifier.callable_function_ids],
+                           [id.as_long() for id in self.vulnerability_verifier.function_ids],
+                           str(self.get_exec_env().this_code),)
+
+            for r in result:
+                print('--------------')
+                print(r)
+                print('--------------')
+                sum_solvingtime +=r[3]
+
+            self.primary_contract_index += 1
+        return sum_solvingtime
+
+
+    def verify_full_state_create(self):
+        sum_solvingtime = 0
+        while self.primary_contract_index < 1:
+            self.cfmanager = ControlFlowManager()
+            self.vulnerability_verifier.set_extracting_fid()
+
+            contract = self.primary_contracts[self.primary_contract_index]
+
+
+            msg_sender = BitVecVal(0x1111111111111111111111111111111111111111, 256)
+            self.init_state(contract,
+                            msg_sender=msg_sender,
+                            )
+            # self.get_machine_state().set_balance(BitVecVal(0xff, 256))
+
+            self.get_exec_env().get_msg_data().set_function_id()
+            self.get_exec_env().get_msg_data().set_concrete_arguments(BitVecVal(0xff, 256))
+            #self.get_exec_env().get_msg_data().set_arguments(1000)
+            self.run()
+            print('callable fids=', self.vulnerability_verifier.get_callable_function_ids())
+            print('fids=', self.vulnerability_verifier.get_function_ids())
+
+            def multi(num_process, function, X, Y, contract):
+                p = Pool(num_process)  # 最大プロセス数
+                return p.map(function, [(x, y, contract) for x in X for y in Y])
+
+            # result = multi(cpu_count() - 2,
+            #                v,
+            #                [id.as_long() for id in self.vulnerability_verifier.callable_function_ids],
+            #                [id.as_long() for id in self.vulnerability_verifier.function_ids],
+            #                str(self.get_exec_env().this_code),)
+            def single(function,X,Y,contract):
+                return map(function,[(x, y, contract) for x in X for y in Y])
+            print('number of proccess:', cpu_count() - 2)
+            result = single(
+            # result = multi(cpu_count() - 2,
+                           v2,
+                           [id.as_long() for id in self.vulnerability_verifier.callable_function_ids],
+                           [id.as_long() for id in self.vulnerability_verifier.function_ids],
+                           str(self.get_exec_env().this_code),)
+
+            for r in result:
+                print('--------------')
+                print(r)
+                print('--------------')
+                sum_solvingtime +=r[3]
+
+            self.primary_contract_index += 1
+        return sum_solvingtime
+
+
+
+
 
     def verify_create_based_re_entrancy(self, verifier = None):
 
@@ -133,6 +419,14 @@ class VM():
                     self.vulnerability_verifier.set_first_call(True)
                     self.get_exec_env().get_msg_data().set_concrete_arguments(BitVecVal(0xff, 256))
                     self.run()
+                    name, cfg = self.cfmanager.gen_CFG()
+                    name = 'CFG-{}-{}-independent'.format(x, y)
+                    with open(name + '.txt', 'w') as f:
+                        f.write(str(self.vulnerability_verifier.independently_executed_state) + '\n' + str(
+                            self.vulnerability_verifier.cross_called_executed_state))
+                    with open(name + '.dot', 'w') as f:
+                        f.write(cfg)
+                    subprocess.call(['dot', '-T', 'png', name + '.dot', '-o', name + '.png'])
                     # dbgredmsg('vulnerability_verifier.independently_executed_state')
 
                     # ここからcross-function
@@ -145,7 +439,7 @@ class VM():
                     self.vulnerability_verifier.set_third_call(True)
                     self.vulnerability_verifier.set_executing_cross_function()
                     self.cfmanager = ControlFlowManager()
-                    self.init_state(addr=contract, exec_env_id=x.as_long(), msg_sender=msg_sender)
+                    self.init_state(addr=contract, exec_env_id=x.as_long(), msg_sender=ZeroExt(96, BitVec('address1', 160)))
                     self.get_exec_env().get_msg_data().set_function_id(x)
                     self.get_exec_env().get_msg_data().set_concrete_arguments(BitVecVal(0xff, 256))
                     #self.get_machine_state().set_balance(BitVecVal(0xff, 256))
@@ -181,7 +475,7 @@ class VM():
             contract = self.primary_contracts[self.primary_contract_index]
             self.init_state(contract)
             self.get_exec_env().get_msg_data().set_function_id()
-            self.get_exec_env().get_msg_data().set_arguments(1024)
+            self.get_exec_env().get_msg_data().set_arguments(1000)
             self.run()
 
             name, cfg = self.cfmanager.gen_CFG()
@@ -228,6 +522,14 @@ class VM():
                     # self.vulnerability_verifier.set_first_call(True)
                     self.get_exec_env().get_msg_data().set_arguments(1024)
                     self.run()
+                    name, cfg = self.cfmanager.gen_CFG()
+                    name = 'CFG-{}-{}-independent'.format(x, y)
+                    with open(name + '-independent-state.txt', 'w') as f:
+                        f.write(str(self.vulnerability_verifier.independently_executed_state) + '\n' + str(
+                            self.vulnerability_verifier.cross_called_executed_state))
+                    with open(name + '.dot', 'w') as f:
+                        f.write(cfg)
+                    subprocess.call(['dot', '-T', 'png', name + '.dot', '-o', name + '.png'])
                     # dbgredmsg('vulnerability_verifier.independently_executed_state')
 
 
@@ -453,7 +755,7 @@ class VM():
             # else:
             #     self.cfmanager.visited_address[self.get_exec_env().get_exec_env_id()][self.get_pc()] = True
 
-            self.cfmanager.visited_address[self.get_exec_env().get_exec_env_id()][self.get_pc()] = True
+            self.cfmanager.visited_address[self.get_processing_block().get_path()][self.get_pc()] = True
 
 
 
@@ -465,7 +767,7 @@ class VM():
 
             hex_opcode = self.get_byte_from_bytecode()
             mnemonic = self.hex_to_mnemonic(hex_opcode)
-            # print('pc=', format(self.get_pc(), '04x'), mnemonic,self.get_exec_env().get_exec_env_id())
+            #print('pc=', '0x{:04x}'.format(self.get_pc()), mnemonic,self.get_exec_env().get_exec_env_id())
 
 
             if self.jumped():
@@ -480,7 +782,8 @@ class VM():
                 #         self.get_exec_env().get_exec_env_id(),
                 #         self.get_pc()
                 # )
-                self.cfmanager.visited_address[self.get_exec_env().get_exec_env_id()][self.get_pc()] = True
+                # self.cfmanager.visited_address[self.get_processing_block().get_path()][self.get_pc()] = True
+                pass
 
 
 
@@ -508,14 +811,16 @@ class VM():
 
     def terminate(self):
         # print('terminate')
+        # print('pc=',self.get_pc())
+        # print(self.get_processing_block().get_path())
         # print('storage id:',id(self.get_machine_state().get_storage()))
-        # print('balance:',self.get_balance())
+        # print('depth:',self.get_processing_block().get_depth())
+        self.get_processing_block().add_constraint_to_path_condition(self.get_balance() >= 0)
         self.vulnerability_verifier.extract_data(
             self.get_processing_block().get_path_condition(),
             self.get_processing_block().get_block_state(),
             self.get_machine_state().get_storage(),
             self.get_balance(),
-            self.get_processing_block().get_depth(),
         )
         return self.cfmanager.rollback_from_dfs_stack()
 
@@ -860,7 +1165,12 @@ class VM():
                 self.push_to_stack(BitVecZero256())
             elif self.get_processing_block().get_exec_env().get_code()[prevpc * 2:prevpc * 2 + 2] == 'f1':
                 self.push_to_stack(
-                    BitVec256('call_succeeds_{}_{}'.format(self.get_exec_env().get_exec_env_id(), prevpc * 2)))
+                    # BitVec256('call_succeeds_{}_{}'.format(self.get_exec_env().get_exec_env_id(), prevpc * 2))
+                    # BitVec256('call_succeeds_{}_{}'.format(self.get_exec_env().depth_of_call, prevpc * 2))
+                    # BitVec256('call_succeeds_{}'.format( self.get_pc() * 2))
+                    # BitVec256('call_succeeds')
+                    BitVecOne256()
+                )
 
 
         else:
@@ -1147,7 +1457,11 @@ class VM():
     def op_extcodesize(self, s):
         #addr = str(simplify(s[0] % 2**160))
         addr = str(simplify(s[0]))
-        self.push_to_stack(BitVecVal256(len(self.σ.get_account(addr).get_bytecode())//2))
+        try:
+            self.push_to_stack(BitVecVal256(len(self.σ.get_account(addr).get_bytecode())//2))
+        except:
+            # TODO
+            self.push_to_stack(BitVec256('EXT_CODE_{}'.format(self.get_pc())))
         self.increment_pc()
 
     def op_extcodecopy(self, s):
@@ -1237,6 +1551,10 @@ class VM():
         self.increment_pc()
 
     def op_sload(self, s):
+        # print('-----------op_sload------------:', id(self.get_machine_state().get_storage()))
+        # print(s[0])
+        # print(self.get_machine_state().get_storage().sload(s[0]))
+        # print('---------------------------------')
         self.push_to_stack(self.get_machine_state().get_storage().sload(s[0]))
         self.increment_pc()
 
@@ -1256,7 +1574,10 @@ class VM():
         #     raise
         jumpdest = s[0]
         self.set_jumpdest(jumpdest)
-        self.branch(continuable=False, jumpable=True, condition=True)
+        if self.branch(continuable=False, jumpable=True, condition=True) == False:
+            return self.op_stop(s)
+
+
 
 
 
@@ -1270,12 +1591,15 @@ class VM():
             condition = condition != 0
 
         # ジャンプ可能か
-        jumpable = solve_and_time(condition)
+        jumpable = solve_and_time(And(condition,self.get_processing_block().get_path_condition()))
         # 継続可能か
-        continuable = solve_and_time(Not(condition))
-
+        continuable = solve_and_time(And(Not(condition), self.get_processing_block().get_path_condition()))
+        # print('op_jumpi')
+        # print(hex(self.get_pc()),self.get_exec_env().depth_of_call,self.get_processing_block().get_path())
+        # print(continuable,jumpable)
+        # print()
         if not self.branch(continuable, jumpable, condition):
-            self.op_stop(s)
+            return self.op_stop(s)
 
     def op_pc(self, s):
         self.push_to_stack(self.get_machine_state().get_pc())
@@ -1327,8 +1651,10 @@ class VM():
         self.increment_pc()
 
     def op_create(self, s):
+
         if not (isinstance(s[1], BitVecNumRef) and isinstance(s[2], BitVecNumRef)):
-            raise DevelopmentErorr('illegal parameter given to CREATE')
+
+            raise DevelopmentErorr('illegal parameter given to CREATE '+str(s[1:3]))
 
         offset = s[1].as_long()
         length = s[2].as_long()
@@ -1338,6 +1664,7 @@ class VM():
             op = self.get_machine_state().get_memory().get_one_byte(offset+i)
 
             if (not isinstance(op, BitVecNumRef)) and (not isinstance(simplify(op),BitVecNumRef)):
+                print(op)
                 raise DevelopmentErorr('illegal parameter given to CREATE')
             else:
                 new_code += format(simplify(op).as_long(), '02x')
@@ -1365,7 +1692,7 @@ class VM():
                 and isinstance(s[4], BitVecNumRef)
                 and isinstance(s[5], BitVecNumRef)
                 and isinstance(s[6], BitVecNumRef)):
-
+            print(s,self.get_pc())
             raise DevelopmentErorr('some parameter given to CALL must be concrete value')
 
         self.get_processing_block().add_block_state(CALLABLE)
@@ -1389,9 +1716,13 @@ class VM():
         self.get_machine_state().set_retOffset(retOffset)
 
         # print('op_call')
+        # print('pc=',self.get_pc())
         # print('balance prev')
         # print(self.get_balance())
         self.set_balance(self.get_balance() - value)
+        #print(self.get_processing_block().get_path_condition())
+        # self.get_processing_block().add_constraint_to_path_condition(self.get_balance() >= 0)
+        #print(self.get_processing_block().get_path_condition())
         # print('value:')
         # print(value)
         # print('balance next')
@@ -1417,6 +1748,7 @@ class VM():
         if self.vulnerability_verifier.is_first_call():
             addr = self.secondary_contract
             fid = BitVecVal(0, 32)
+            print('FIRST CALL')
             #TODO:returndata
         elif self.vulnerability_verifier.is_second_call():
             addr = self.primary_contracts[self.primary_contract_index]
@@ -1426,9 +1758,15 @@ class VM():
             msg_data.set_arguments(1024)
             #for create-based
             #msg_data.set_concrete_arguments(BitVecVal(0xff,256))
+            print('SECOND CALL')
         else:
             self.push_to_stack(
-                BitVec256('call_succeeds_{}_{}'.format(self.get_exec_env().get_exec_env_id(), self.get_pc() * 2)))
+                # BitVec256('call_succeeds_{}_{}'.format(self.get_exec_env().get_exec_env_id(), self.get_pc() * 2)))
+                # BitVec256('call_succeeds_{}_{}'.format(self.get_exec_env().depth_of_call, self.get_pc() * 2)))
+                # BitVec256('call_succeeds_{}'.format(self.get_pc() * 2))
+                #     BitVec256('call_succeeds')
+                BitVecOne256()
+            )
             self.increment_pc()
 
             returndata = [BitVec('Return_data{}-{}_{}'.format(self.get_exec_env().get_exec_env_id(),
@@ -1449,7 +1787,8 @@ class VM():
                     Ib=self.σ.get_account(str(addr)).get_bytecode(),
                     Is=self.get_address(),
                     Iv=None if fid.as_long() == self.vulnerability_verifier.get_y().as_long() else value,#fallbackの想定
-                    Id=msg_data
+                    Id=msg_data,
+                    Ie=self.get_exec_env().depth_of_call + 1
 
 
                 )
@@ -1516,7 +1855,15 @@ class VM():
                                    BitVecZero256()
                                                )))
             elif self.get_processing_block().get_exec_env().get_code()[prevpc*2:prevpc*2+2] == 'f1':
-                self.push_to_stack(BitVec256('call_succeeds_{}_{}'.format(self.get_exec_env().get_exec_env_id(), prevpc * 2)))
+                #self.push_to_stack(BitVec256('call_succeeds_{}_{}'.format(self.get_exec_env().get_exec_env_id(), prevpc * 2)))
+
+                # self.push_to_stack(BitVec256('call_succeeds_{}_{}'.format(self.get_exec_env().depth_of_call, prevpc* 2)))
+                # self.push_to_stack(
+                #     BitVec256('call_succeeds_{}'.format(prevpc * 2)))
+                self.push_to_stack(
+                    # BitVec256('call_succeeds')
+                    BitVecOne256()
+                )
 
 
 
@@ -1528,7 +1875,9 @@ class VM():
         pass
     def op_revert(self, s):
         # 他に正常終了するルートがあるという前提でcallstackよりdfsstackからのロールバック優先
+
         if not self.cfmanager.rollback_from_dfs_stack():
+            # TODO call stackからのロールバック時にデータの継承を行わない
             return self.cfmanager.rollback_from_call_stack(self.vulnerability_verifier)
 
         # if self.cfmanager.get_processing_block().get_call_stack_size() > 0:

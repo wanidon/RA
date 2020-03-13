@@ -4,6 +4,9 @@ from math import copysign
 from sys import stderr
 import time_measurement
 from time import perf_counter
+import os
+
+
 def BitVec256(name) -> BitVecRef:
     return BitVec(name,256)
 
@@ -55,18 +58,18 @@ def dbgredmsg(*something):
     stderr.write(' '.join([str(d) for d in something])+'\n')
 
 def reset_time():
-    time_measurement.exec_time = perf_counter()
-    time_measurement.solving_time = 0
+    time_measurement.exec_time[os.getpid()] = perf_counter()
+    time_measurement.solving_time[os.getpid()] = 0
 
 def get_time():
-    return perf_counter() - time_measurement.exec_time, time_measurement.solving_time
+    return perf_counter() - time_measurement.exec_time[os.getpid()], time_measurement.solving_time[os.getpid()]
 
 def solve_and_time(condition, solver=None):
     s = Solver() if solver is None else solver
     s.add(condition)
     t = perf_counter()
     r = s.check()
-    time_measurement.solving_time += perf_counter() - t
+    time_measurement.solving_time[os.getpid()] += perf_counter() - t
     #
     return r == sat
 
@@ -75,7 +78,7 @@ def get_model_and_time(condition, solver=None):
     s.add(condition)
     t = perf_counter()
     r = s.check()
-    time_measurement.solving_time += perf_counter() - t
+    time_measurement.solving_time[os.getpid()] += perf_counter() - t
     return s.model() if r == sat else False
 
 if __name__ == '__main__':
