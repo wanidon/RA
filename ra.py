@@ -1,8 +1,15 @@
 from vm import VM
 from data_structures import WorldState
+from utils import reset_time
+reset_time()
 
 # get contract code
 bytecode = '45600557fe44600a57fe4300'
+bytecode = '608060405234801561001057600080fd5b506004361061002b5760003560e01c80633ccfd60b14610030575b600080fd5b61003861003a565b005b60003373ffffffffffffffffffffffffffffffffffffffff166000803373ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff1681526020019081526020016000205460405180600001905060006040518083038185875af1925050503d80600081146100d8576040519150601f19603f3d011682016040523d82523d6000602084013e6100dd565b606091505b50509050801561012c5760008060003373ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff168152602001908152602001600020819055505b5056fea265627a7a72305820300e906c61c5f68e15c6ee302e607456ecebe0d50832807f306741ec3e07d2c764736f6c63430005090032'
+
+bytecode = input()
+
+
 primary_contracts = [bytecode]
 secondary_contract = None
 tertiary_contracts = []
@@ -11,4 +18,5 @@ world_state = WorldState()
 vm = VM(world_state)
 for b in primary_contracts:
     vm.add_primary_contract(b)
-vm.run_all()
+# vm.run_all()
+vm.verify_full_state()

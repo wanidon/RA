@@ -69,6 +69,7 @@ def solve_and_time(condition, solver=None):
     s.add(condition)
     t = perf_counter()
     r = s.check()
+    print(time_measurement.solving_time)
     time_measurement.solving_time[os.getpid()] += perf_counter() - t
     #
     return r == sat

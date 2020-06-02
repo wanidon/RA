@@ -1,4 +1,3 @@
-frozendocumentation/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -108,5 +107,5 @@ test/
 playground/
 .png
 .dot
-
 TODO.md
+private/
