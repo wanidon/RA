@@ -16,3 +16,6 @@ In this case, `'0x3ccfd60b'` is function ID of the first called function, and `'
 ## Limitation
 - RA cannnot create new contract whose code will be determine dynamically(such part will be symbol variable). It is due to the data type which represents contract. Ra just uses a string as EVM bytecode. Thus, if it is replaced with python list, or temporally fixes such dynamic code, you can analyse such contracts.
 - Some EVM opcodes are not implemented in RA's VM.
+
+## License
+This program is released under the MIT license.
