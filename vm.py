@@ -64,7 +64,10 @@ def v(arg):
             vm.vulnerability_verifier.cross_called_executed_state))
     with open(name + '.dot', 'w') as f:
         f.write(cfg)
-    subprocess.call(['dot', '-T', 'png', name + '.dot', '-o', name + '.png'])
+    try:
+        subprocess.call(['dot', '-T', 'png', name + '.dot', '-o', name + '.png'])
+    except:
+        pass
 
 
 
@@ -93,7 +96,10 @@ def v(arg):
             vm.vulnerability_verifier.cross_called_executed_state))
     with open(name + '.dot', 'w') as f:
         f.write(cfg)
-    subprocess.call(['dot', '-T', 'png', name + '.dot', '-o', name + '.png'])
+    try:
+        subprocess.call(['dot', '-T', 'png', name + '.dot', '-o', name + '.png'])
+    except:
+        pass
     e,s = get_time()
 
     return (hex(x.as_long()), hex(y.as_long()), vm.vulnerability_verifier.diff_states(), s)
@@ -156,7 +162,10 @@ def v2(arg):
             vm.vulnerability_verifier.cross_called_executed_state))
     with open(name + '.dot', 'w') as f:
         f.write(cfg)
-    subprocess.call(['dot', '-T', 'png', name + '.dot', '-o', name + '.png'])
+    try:
+        subprocess.call(['dot', '-T', 'png', name + '.dot', '-o', name + '.png'])
+    except:
+        pass
 
 
 
@@ -186,7 +195,10 @@ def v2(arg):
             vm.vulnerability_verifier.cross_called_executed_state))
     with open(name + '.dot', 'w') as f:
         f.write(cfg)
-    subprocess.call(['dot', '-T', 'png', name + '.dot', '-o', name + '.png'])
+    try:
+        subprocess.call(['dot', '-T', 'png', name + '.dot', '-o', name + '.png'])
+    except:
+        pass
     e,s = get_time()
 
     return (hex(x.as_long()), hex(y.as_long()), vm.vulnerability_verifier.diff_states(), s)
@@ -383,7 +395,10 @@ class VM():
             name = 'CFG-no-specified-fid'
             with open(name + '.dot', 'w') as f:
                 f.write(cfg)
-            subprocess.call(['dot', '-T', 'png', name + '.dot', '-o', name + '.png'])
+                try:
+                    subprocess.call(['dot', '-T', 'png', name + '.dot', '-o', name + '.png'])
+                except:
+                    pass
             print('callable fids=', self.vulnerability_verifier.get_callable_function_ids())
             print('fids=', self.vulnerability_verifier.get_function_ids())
 
@@ -426,7 +441,10 @@ class VM():
                             self.vulnerability_verifier.cross_called_executed_state))
                     with open(name + '.dot', 'w') as f:
                         f.write(cfg)
-                    subprocess.call(['dot', '-T', 'png', name + '.dot', '-o', name + '.png'])
+                        try:
+                            subprocess.call(['dot', '-T', 'png', name + '.dot', '-o', name + '.png'])
+                        except:
+                            pass
                     # dbgredmsg('vulnerability_verifier.independently_executed_state')
 
                     # ここからcross-function
@@ -456,7 +474,10 @@ class VM():
                             self.vulnerability_verifier.cross_called_executed_state))
                     with open(name + '.dot', 'w') as f:
                         f.write(cfg)
-                    subprocess.call(['dot', '-T', 'png', name + '.dot', '-o', name + '.png'])
+                        try:
+                            subprocess.call(['dot', '-T', 'png', name + '.dot', '-o', name + '.png'])
+                        except:
+                            pass
 
 
             self.primary_contract_index += 1
@@ -482,7 +503,10 @@ class VM():
             name = 'CFG-no-specified-fid'
             with open(name + '.dot', 'w') as f:
                 f.write(cfg)
-            subprocess.call(['dot', '-T', 'png', name + '.dot', '-o', name + '.png'])
+                try:
+                    subprocess.call(['dot', '-T', 'png', name + '.dot', '-o', name + '.png'])
+                except:
+                    pass
             print('callable fids=',self.vulnerability_verifier.get_callable_function_ids())
             print('fids=',self.vulnerability_verifier.get_function_ids())
 
@@ -529,7 +553,10 @@ class VM():
                             self.vulnerability_verifier.cross_called_executed_state))
                     with open(name + '.dot', 'w') as f:
                         f.write(cfg)
-                    subprocess.call(['dot', '-T', 'png', name + '.dot', '-o', name + '.png'])
+                        try:
+                            subprocess.call(['dot', '-T', 'png', name + '.dot', '-o', name + '.png'])
+                        except:
+                            pass
                     # dbgredmsg('vulnerability_verifier.independently_executed_state')
 
 
@@ -559,7 +586,10 @@ class VM():
                         f.write(str(self.vulnerability_verifier.independently_executed_state)+'\n'+str(self.vulnerability_verifier.cross_called_executed_state))
                     with open(name + '.dot','w') as f:
                         f.write(cfg)
-                    subprocess.call(['dot', '-T', 'png', name + '.dot', '-o', name + '.png'])
+                        try:
+                            subprocess.call(['dot', '-T', 'png', name + '.dot', '-o', name + '.png'])
+                        except:
+                            pass
 
 
 
@@ -599,7 +629,10 @@ class VM():
                 f.write(cfg)
             self.primary_contract_index += 1
             #self.show_vm_state()
-            subprocess.call(['dot', '-T', 'png', name+'.dot', '-o', name+'.png'])
+            try:
+                subprocess.call(['dot', '-T', 'png', name + '.dot', '-o', name + '.png'])
+            except:
+                pass
 
 
     def show_vm_state(self):
