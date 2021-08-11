@@ -16,6 +16,9 @@ import subprocess
 import sys
 from multiprocessing import Pool, Process, cpu_count
 
+from os import environ
+dbg = (lambda *s: stderr.write("\033[92m{}\033[0m".format(' '.join(str(x) for x in s)+'\n'))) if 'TERM_PROGRAM' in environ else lambda *s: 0
+
 
 WORDBITSIZE = 256
 WORDBYTESIZE = WORDBITSIZE // 8
@@ -224,12 +227,12 @@ class VM():
         self.vulnerability_verifier = VulnerabilityVerifier()
         # self.exec_env_num = 0
 
-    def add_primary_contract(self, bytecode: str, addr:BitVecNumRef = None):
-        addr = self.σ.add_account(bytecode, addr)
-        self.primary_contracts.append(addr)
-        return addr
+    def add_primary_contract(self, bytecode: list, addr:BitVecNumRef = None) -> BitVecRef:
+        contract_account_addr = self.σ.add_account(bytecode, addr)
+        self.primary_contracts.append(contract_account_addr)
+        return contract_account_addr
 
-    def add_secondary_contract(self, bytecode:str, addr:BitVecNumRef = None):
+    def add_secondary_contract(self, bytecode:str, addr:BitVecNumRef = None) -> None:
         self.secondary_contract = self.σ.add_account(bytecode, addr)
 
     def add_tertiary_contract(self, bytecodes:list):
@@ -297,7 +300,7 @@ class VM():
                            v,
                            [id.as_long() for id in self.vulnerability_verifier.callable_function_ids],
                            [id.as_long() for id in self.vulnerability_verifier.function_ids],
-                           str(self.get_exec_env().this_code),)
+                           self.get_code(),)
 
             for r in result:
                 print('--------------')
@@ -348,7 +351,7 @@ class VM():
                            v2,
                            [id.as_long() for id in self.vulnerability_verifier.callable_function_ids],
                            [id.as_long() for id in self.vulnerability_verifier.function_ids],
-                           str(self.get_exec_env().this_code),)
+                           self.get_code(),)
 
             for r in result:
                 print('--------------')
@@ -680,7 +683,7 @@ class VM():
     def get_data(self) -> MsgData:
         return self.get_exec_env().msg_data
 
-    def get_code(self) -> str:
+    def get_code(self) -> list:
         return self.get_exec_env().this_code
 
     def get_gasprice(self) -> BitVecRef:
@@ -730,13 +733,13 @@ class VM():
         self.get_machine_state().set_pc(self.get_machine_state().get_pc() + 1)
 
     def get_byte_from_bytecode(self):
-        return self.get_exec_env().this_code[self.get_pc()*2:self.get_pc()*2+2]
+        return ''.join(self.get_code()[self.get_pc()*2:self.get_pc()*2+2])
 
 
     # 現状ではrun中にjumpdestかを確認
     def check_jumpdest(self, dest:BitVecNumRef):
         d = dest.as_long()
-        return True if self.get_exec_env().this_code[d*2:d*2+2] == '5b' else False
+        return True if ''.join(self.get_code()[d*2:d*2+2]) == '5b' else False
 
     def convert_to_expression(self, condition):
         if isinstance(condition, BitVecNumRef):
@@ -795,7 +798,7 @@ class VM():
 
 
             if self.get_machine_state().get_pc() >= len(
-                    self.get_exec_env().this_code) // 2:
+                    self.get_code()) // 2:
                 raise DevelopmentErorr
 
             hex_opcode = self.get_byte_from_bytecode()
@@ -1013,7 +1016,6 @@ class VM():
 
         d['fe'] = 'INVALID'
         d['ff'] = 'SELFDESTRUCT'
-
         return d[hex]
 
     def mnemonic_to_func(self, mnemonic: str):
@@ -1194,9 +1196,9 @@ class VM():
         if self.cfmanager.rollback_from_call_stack(self.vulnerability_verifier):
             # when the external call was caused by CREATE
             prevpc = self.get_processing_block().get_pc() - 1
-            if self.get_processing_block().get_exec_env().get_code()[prevpc * 2:prevpc * 2 + 2] == 'f0':
+            if ''.join(self.get_processing_block().get_exec_env().get_code()[prevpc * 2:prevpc * 2 + 2]) == 'f0':
                 self.push_to_stack(BitVecZero256())
-            elif self.get_processing_block().get_exec_env().get_code()[prevpc * 2:prevpc * 2 + 2] == 'f1':
+            elif ''.join(self.get_processing_block().get_exec_env().get_code()[prevpc * 2:prevpc * 2 + 2]) == 'f1':
                 self.push_to_stack(
                     # BitVec256('call_succeeds_{}_{}'.format(self.get_exec_env().get_exec_env_id(), prevpc * 2))
                     # BitVec256('call_succeeds_{}_{}'.format(self.get_exec_env().depth_of_call, prevpc * 2))
@@ -1474,7 +1476,7 @@ class VM():
         copysize = s[2].as_long() * 2
 
         codesize = len(self.get_code())
-        tmpcode = self.get_code()[codeoffset:codeoffset+copysize] + '00' * (codeoffset + copysize - codesize)
+        tmpcode = ''.join(self.get_code()[codeoffset:codeoffset+copysize]) + '00' * (codeoffset + copysize - codesize)
 
         memory = self.get_machine_state().get_memory()
 
@@ -1876,7 +1878,7 @@ class VM():
 
             # when the external call was caused by CREATE
             prevpc = self.get_processing_block().get_pc() - 1
-            if self.get_processing_block().get_exec_env().get_code()[prevpc*2:prevpc*2+2] == 'f0':
+            if ''.join(self.get_processing_block().get_exec_env().get_code()[prevpc*2:prevpc*2+2]) == 'f0':
 
                 addr = self.add_primary_contract(''.join([format(v.as_long(),'02x') for v in returndata]))
 
@@ -1887,7 +1889,7 @@ class VM():
                                    addr,
                                    BitVecZero256()
                                                )))
-            elif self.get_processing_block().get_exec_env().get_code()[prevpc*2:prevpc*2+2] == 'f1':
+            elif ''.join(self.get_processing_block().get_exec_env().get_code()[prevpc*2:prevpc*2+2]) == 'f1':
                 #self.push_to_stack(BitVec256('call_succeeds_{}_{}'.format(self.get_exec_env().get_exec_env_id(), prevpc * 2)))
 
                 # self.push_to_stack(BitVec256('call_succeeds_{}_{}'.format(self.get_exec_env().depth_of_call, prevpc* 2)))

@@ -251,7 +251,7 @@ class Calldata:
 
 
 class Account:
-    def __init__(self, bytecode: str,
+    def __init__(self, bytecode: list,
                  account_num: int,
                  balance: BitVecRef = None,
                  nonce=0):
@@ -267,7 +267,7 @@ class Account:
     def get_balance(self) -> BitVecRef:
         return self.__balance
 
-    def get_bytecode(self) -> str:
+    def get_bytecode(self) -> list:
         return self.bytecode
 
     def codesize(self) -> int:
@@ -279,16 +279,14 @@ class WorldState:
         self.block_hashes = {}
         self.accounts = {}
 
-    def add_account(self, bytecode:str, addr:BitVecRef = None) -> BitVecRef:
-        # アカウント番号とAccount address生成
+    def add_account(self, bytecode:list, addr:BitVecRef = None) -> BitVecRef:
+        # generate account number and account address
         new_num = len(self.accounts)
-        new_addr = ZeroExt(96,BitVec('address{}'.format(new_num), 160)) if addr is None else addr
-        # Account生成
+        new_addr = ZeroExt(96, BitVec('address{}'.format(new_num), 160)) if addr is None else addr
+        # generate Account object
         account = Account(bytecode, new_num)
-
         # アドレスとAccountインスタンスの対応をaccountsに保存
         self.accounts[str(new_addr)] = account
-
         return new_addr
 
     def get_account(self, addr: BitVecRef) -> Account:
@@ -385,7 +383,7 @@ class ExecutionEnvironment:
     def get_block_header(self) -> BlockHeader:
         return self.block_header
 
-    def get_code(self) -> str:
+    def get_code(self) -> list:
         return self.this_code
 
     def get_msg_data(self) -> MsgData:
