@@ -1,17 +1,51 @@
-#! /usr/bin/env/ python3
-# coding:utf-8
-
+from __future__ import annotations
 from collections import deque
-from copy import deepcopy,copy
+from copy import deepcopy, copy
 from z3 import And, Or, Not, BitVecRef, BitVecNumRef, BoolRef, BitVec, BitVecVal, Concat, Extract, simplify, Int, Solver, unsat, sat, ZeroExt, ExprRef
-from utils import BitVec256, BitVecVal256, zero8bit, checkBitVecRef256, dbgredmsg
-from exceptions import DevelopmentErorr, SettingError
+
+from utils import BitVec256, BitVecVal256, dbgredmsg, zero8bit, checkBitVecRef256
+from exceptions import DevelopmentErorr, SettingError, EVMbytecodeError
 from constant import RUNNING, TERMINATED, RETURNED, CALLABLE
 from collections import defaultdict
 from random import random
 
 WORDBITSIZE = 256
 WORDBYTESIZE = WORDBITSIZE // 8
+
+
+class Bytecode(list):
+    
+    def __init__(self, string_code: str = None) -> None:
+        data = []
+        if string_code:
+            # Two characters represent one byte.
+            prev = ''
+            for c in string_code:
+                if prev:
+                    one_byte = prev + c
+                    self.check_valid_char(one_byte)
+                    data.append(one_byte)
+                    prev = ''
+                else:
+                    prev = c
+            if prev:
+                raise EVMbytecodeError('The length of the given code is an odd number.')
+        super().__init__(data)
+    
+    def append(self, x: str | BitVecRef):
+        if not isinstance(x, BitVecRef):
+            self.check_valid_char(x)
+        super().append(x)
+        
+    def check_valid_char(self, one_byte: str) -> bool:
+        if len(one_byte) != 2:
+            raise EVMbytecodeError('Cannot represent a single byte because the given number of characters is not two.')
+
+        for c in one_byte:
+            if c not in '0123456789abcdef':
+                raise EVMbytecodeError('A non-hexadecimal character is given.')
+        
+        return True
 
 
 class Stack:
@@ -251,7 +285,7 @@ class Calldata:
 
 
 class Account:
-    def __init__(self, bytecode: str,
+    def __init__(self, bytecode: Bytecode,
                  account_num: int,
                  balance: BitVecRef = None,
                  nonce=0):
@@ -267,11 +301,12 @@ class Account:
     def get_balance(self) -> BitVecRef:
         return self.__balance
 
-    def get_bytecode(self) -> str:
+    def get_bytecode(self) -> Bytecode:
         return self.bytecode
 
     def codesize(self) -> int:
         return len(self.bytecode)
+
 
 class WorldState:
     def __init__(self):
@@ -279,16 +314,14 @@ class WorldState:
         self.block_hashes = {}
         self.accounts = {}
 
-    def add_account(self, bytecode:str, addr:BitVecRef = None) -> BitVecRef:
-        # アカウント番号とAccount address生成
+    def add_account(self, bytecode: Bytecode, addr: BitVecRef = None) -> BitVecRef:
+        # generate account number and account address
         new_num = len(self.accounts)
-        new_addr = ZeroExt(96,BitVec('address{}'.format(new_num), 160)) if addr is None else addr
-        # Account生成
+        new_addr = ZeroExt(96, BitVec('address{}'.format(new_num), 160)) if addr is None else addr
+        # generate Account object
         account = Account(bytecode, new_num)
-
         # アドレスとAccountインスタンスの対応をaccountsに保存
         self.accounts[str(new_addr)] = account
-
         return new_addr
 
     def get_account(self, addr: BitVecRef) -> Account:
@@ -385,7 +418,7 @@ class ExecutionEnvironment:
     def get_block_header(self) -> BlockHeader:
         return self.block_header
 
-    def get_code(self) -> str:
+    def get_code(self) -> list:
         return self.this_code
 
     def get_msg_data(self) -> MsgData:
@@ -714,3 +747,5 @@ class BasicBlock:
         self.path |= block.path
 
 
+
+        

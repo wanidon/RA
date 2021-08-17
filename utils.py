@@ -1,4 +1,7 @@
+from __future__ import annotations
 from z3 import *
+from z3 import BitVecRef, simplify
+
 from exceptions import NotBitVecRef256Erorr, NotBitVecNumRef256Erorr
 from math import copysign
 from sys import stderr
@@ -6,6 +9,8 @@ import time_measurement
 from time import perf_counter
 import os
 
+def convert_to_bitvec8(x: str | BitVecRef) -> BitVecRef:
+    return BitVecVal(int(x, 16), 8) if isinstance(x, str) else x
 
 def BitVec256(name) -> BitVecRef:
     return BitVec(name,256)
