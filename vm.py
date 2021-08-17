@@ -1,7 +1,8 @@
-from data_structures import Stack, Memory, MsgData, Storage, Returndata, ExecutionEnvironment, WorldState, MachineState, BasicBlock, Account
+from data_structures import Bytecode, Stack, Memory, MsgData, Storage, Returndata, ExecutionEnvironment, WorldState, MachineState, BasicBlock, Account
 from control_flow_manager import ControlFlowManager
 from z3 import BV2Int, Int2BV, And, Or, Xor, Not, If, BitVecRef, BitVecNumRef, BitVecVal, BitVec,  Concat, Extract, simplify, Solver, sat, unsat, UDiv, URem, Concat, AstRef, LShR, ZeroExt
 from utils import *
+from utils import convert_to_bitvec8
 from collections import defaultdict
 from fee_schedule import c
 from exceptions import DevelopmentErorr
@@ -17,22 +18,24 @@ import sys
 from multiprocessing import Pool, Process, cpu_count
 
 from os import environ
-dbg = (lambda *s: stderr.write("\033[92m{}\033[0m".format(' '.join(str(x) for x in s)+'\n'))) if 'TERM_PROGRAM' in environ else lambda *s: 0
+dbg = (lambda *s: sys.stderr.write("\033[92m{}\033[0m".format(' '.join(str(x) for x in s)+'\n'))) if 'TERM_PROGRAM' in environ else lambda *s: 0
 
 
 WORDBITSIZE = 256
 WORDBYTESIZE = WORDBITSIZE // 8
 
 
+
+
+
 def v(arg):
     reset_time()
     x, y, contract = arg
-    x = BitVecVal(x,32)
-    y = BitVecVal(y,32)
-    print('hoge')
+    x = BitVecVal(x, 32) 
+    y = BitVecVal(y, 32)
     vm = VM(WorldState())
     contract = vm.add_primary_contract(contract)
-    secondary_contract = '600080600481803362fffffff100'
+    secondary_contract = Bytecode('600080600481803362fffffff100')
     vm.add_secondary_contract(secondary_contract)
     vm.cfmanager = ControlFlowManager()
     # self.σ.accounts = copy(preserved_accounts)
@@ -115,14 +118,13 @@ def v2(arg):
     x, y, contract = arg
     x = BitVecVal(x,32)
     y = BitVecVal(y,32)
-    print('hoge')
     vm = VM(WorldState())
     initial_addr = BitVecVal(0x1111111111111111111111111111111111111111, 256)
     addr = BitVecVal(0x2222222222222222222222222222222222222222, 256)
     contract = vm.add_primary_contract(contract,addr)
 
 
-    secondary_contract = '600080600481803362fffffff100'
+    secondary_contract = Bytecode('600080600481803362fffffff100')
     vm.add_secondary_contract(secondary_contract,initial_addr)
 
     preserved_accounts = copy(vm.σ.accounts)
@@ -227,15 +229,15 @@ class VM():
         self.vulnerability_verifier = VulnerabilityVerifier()
         # self.exec_env_num = 0
 
-    def add_primary_contract(self, bytecode: list, addr:BitVecNumRef = None) -> BitVecRef:
+    def add_primary_contract(self, bytecode: Bytecode, addr: BitVecNumRef = None) -> BitVecRef:
         contract_account_addr = self.σ.add_account(bytecode, addr)
         self.primary_contracts.append(contract_account_addr)
         return contract_account_addr
 
-    def add_secondary_contract(self, bytecode:str, addr:BitVecNumRef = None) -> None:
+    def add_secondary_contract(self, bytecode: Bytecode, addr: BitVecNumRef = None) -> None:
         self.secondary_contract = self.σ.add_account(bytecode, addr)
 
-    def add_tertiary_contract(self, bytecodes:list):
+    def add_tertiary_contract(self, bytecodes: Bytecode):
         for b in bytecodes:
             self.tertiary_contracts.append(self.σ.add_account(b))
 
@@ -295,8 +297,8 @@ class VM():
             #                str(self.get_exec_env().this_code),)
             def single(function,X,Y,contract):
                 return map(function,[(x, y, contract) for x in X for y in Y])
-            result = single(
-            # result = multi(cpu_count() - 2,
+            # result = single(
+            result = multi(cpu_count() - 2,
                            v,
                            [id.as_long() for id in self.vulnerability_verifier.callable_function_ids],
                            [id.as_long() for id in self.vulnerability_verifier.function_ids],
@@ -733,13 +735,13 @@ class VM():
         self.get_machine_state().set_pc(self.get_machine_state().get_pc() + 1)
 
     def get_byte_from_bytecode(self):
-        return ''.join(self.get_code()[self.get_pc()*2:self.get_pc()*2+2])
+        return ''.join(self.get_code()[self.get_pc()])
 
 
     # 現状ではrun中にjumpdestかを確認
     def check_jumpdest(self, dest:BitVecNumRef):
         d = dest.as_long()
-        return True if ''.join(self.get_code()[d*2:d*2+2]) == '5b' else False
+        return True if ''.join(self.get_code()[d]) == '5b' else False
 
     def convert_to_expression(self, condition):
         if isinstance(condition, BitVecNumRef):
@@ -797,8 +799,7 @@ class VM():
 
 
 
-            if self.get_machine_state().get_pc() >= len(
-                    self.get_code()) // 2:
+            if self.get_machine_state().get_pc() >= len(self.get_code()):
                 raise DevelopmentErorr
 
             hex_opcode = self.get_byte_from_bytecode()
@@ -1196,9 +1197,9 @@ class VM():
         if self.cfmanager.rollback_from_call_stack(self.vulnerability_verifier):
             # when the external call was caused by CREATE
             prevpc = self.get_processing_block().get_pc() - 1
-            if ''.join(self.get_processing_block().get_exec_env().get_code()[prevpc * 2:prevpc * 2 + 2]) == 'f0':
+            if ''.join(self.get_processing_block().get_exec_env().get_code()[prevpc]) == 'f0':
                 self.push_to_stack(BitVecZero256())
-            elif ''.join(self.get_processing_block().get_exec_env().get_code()[prevpc * 2:prevpc * 2 + 2]) == 'f1':
+            elif ''.join(self.get_processing_block().get_exec_env().get_code()[prevpc]) == 'f1':
                 self.push_to_stack(
                     # BitVec256('call_succeeds_{}_{}'.format(self.get_exec_env().get_exec_env_id(), prevpc * 2))
                     # BitVec256('call_succeeds_{}_{}'.format(self.get_exec_env().depth_of_call, prevpc * 2))
@@ -1472,16 +1473,16 @@ class VM():
 
     def op_codecopy(self, s):
         memoffset = s[0].as_long()
-        codeoffset = s[1].as_long() * 2
-        copysize = s[2].as_long() * 2
+        codeoffset = s[1].as_long()
+        copysize = s[2].as_long()
 
         codesize = len(self.get_code())
-        tmpcode = ''.join(self.get_code()[codeoffset:codeoffset+copysize]) + '00' * (codeoffset + copysize - codesize)
+        tmpcode = self.get_code()[codeoffset:codeoffset+copysize] + ['00'] * (codeoffset + copysize - codesize)
 
         memory = self.get_machine_state().get_memory()
 
-        for i in range(copysize//2):
-            memory.mstore8(memoffset+i, BitVecVal256(int(tmpcode[i*2:i*2+2],16)))
+        for i in range(copysize):
+            memory.mstore8(memoffset+i, convert_to_bitvec8(tmpcode[i]))
 
         self.increment_pc()
 
@@ -1493,7 +1494,7 @@ class VM():
         #addr = str(simplify(s[0] % 2**160))
         addr = str(simplify(s[0]))
         try:
-            self.push_to_stack(BitVecVal256(len(self.σ.get_account(addr).get_bytecode())//2))
+            self.push_to_stack(BitVecVal256(len(self.σ.get_account(addr).get_bytecode())))
         except:
             # TODO
             self.push_to_stack(BitVec256('EXT_CODE_{}'.format(self.get_pc())))
@@ -1509,7 +1510,7 @@ class VM():
         tmpcode = code[codeoffset:copysize] + '00' * (codeoffset + copysize - codesize)
         memory = self.get_machine_state().get_memory()
         for i in range(memoffset, copysize):
-            memory.mstore8(BitVecVal256(i), BitVecVal256(tmpcode[i*2:i*2+2]))
+            memory.mstore8(BitVecVal256(i), BitVecVal256(tmpcode[i]))
         self.increment_pc()
 
     def op_returndatasize(self, s):
@@ -1693,16 +1694,18 @@ class VM():
 
         offset = s[1].as_long()
         length = s[2].as_long()
-        new_code = ''
+        new_code = Bytecode()
         import sys
         for i in range(length):
             op = self.get_machine_state().get_memory().get_one_byte(offset+i)
+            
 
-            if (not isinstance(op, BitVecNumRef)) and (not isinstance(simplify(op),BitVecNumRef)):
-                print(op)
-                raise DevelopmentErorr('illegal parameter given to CREATE')
+            if isinstance(simplify(op), BitVecNumRef):
+                new_code.append(format(simplify(op).as_long(), '02x'))
             else:
-                new_code += format(simplify(op).as_long(), '02x')
+                new_code.append(op)
+
+                
 
         self.set_balance(self.get_balance() - s[0])
         # generate new execution environment
@@ -1878,7 +1881,7 @@ class VM():
 
             # when the external call was caused by CREATE
             prevpc = self.get_processing_block().get_pc() - 1
-            if ''.join(self.get_processing_block().get_exec_env().get_code()[prevpc*2:prevpc*2+2]) == 'f0':
+            if ''.join(self.get_processing_block().get_exec_env().get_code()[prevpc]) == 'f0':
 
                 addr = self.add_primary_contract(''.join([format(v.as_long(),'02x') for v in returndata]))
 
@@ -1889,7 +1892,7 @@ class VM():
                                    addr,
                                    BitVecZero256()
                                                )))
-            elif ''.join(self.get_processing_block().get_exec_env().get_code()[prevpc*2:prevpc*2+2]) == 'f1':
+            elif ''.join(self.get_processing_block().get_exec_env().get_code()[prevpc]) == 'f1':
                 #self.push_to_stack(BitVec256('call_succeeds_{}_{}'.format(self.get_exec_env().get_exec_env_id(), prevpc * 2)))
 
                 # self.push_to_stack(BitVec256('call_succeeds_{}_{}'.format(self.get_exec_env().depth_of_call, prevpc* 2)))
@@ -1927,7 +1930,7 @@ class VM():
 
     def op_invalid(self,s):
         # TODO 異常終了
-        print('op=',self.get_code()[self.get_pc()*2:self.get_pc()*2+2])
+        print('op=',self.get_code()[self.get_pc()], "code=", self.get_code(), self.get_pc())
         return False
 
     def op_selfdestruct(self, s):
