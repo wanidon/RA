@@ -1,5 +1,5 @@
 from vm import VM
-from data_structures import WorldState
+from data_structures import WorldState, Bytecode
 from utils import reset_time
 reset_time()
 
@@ -17,6 +17,6 @@ tertiary_contracts = []
 world_state = WorldState()
 vm = VM(world_state)
 for b in primary_contracts:
-    vm.add_primary_contract(b)
+    vm.add_primary_contract(Bytecode(b))
 # vm.run_all()
 vm.verify_full_state()
