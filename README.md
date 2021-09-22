@@ -12,7 +12,7 @@ This tool simulates calling function which may cause re-enctancy attack, and det
 
 ## Usage
 1. Get some EVM bytecode to be verified. If you want to verify your Solidity code, you can get its bytecode as follows:
-  `solc -o {OUTPUT_DIR} --bin-runtime {YOUT_SOLIDITY_FILE} `
+  `solc -o {OUTPUT_DIR} --bin-runtime {YOUR_SOLIDITY_FILE} `
 1. Run ra.py.  
    `python3 ra.py`
 1. Give the bytecode to standard input. For example, the following code has a simple re-entrancy.  
